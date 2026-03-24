@@ -49,6 +49,8 @@ export const PATHS = {
   backupsDir: join(CLAUDE_DIR, "backups"),
   sessionMeta: join(CLAUDE_DIR, "usage-data", "session-meta"),
   dashboardConfig: join(CLAUDE_DIR, "dashboard-config.json"),
+  skillsDir: join(CLAUDE_DIR, "skills"),
+  agentSkillsDir: join(homedir(), ".agents", "skills"),
 };
 
 export const getProjectPath = (c: Context): string | undefined => {
