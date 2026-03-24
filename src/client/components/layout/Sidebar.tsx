@@ -11,9 +11,11 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { label: "Overview", hash: "/", icon: "\u25A0" },
   { label: "Plugins", hash: "/plugins", icon: "\u29C9" },
+  { label: "Skills", hash: "/skills", icon: "\u2736" },
   { label: "MCP Servers", hash: "/mcp", icon: "\u2630" },
   { label: "Hooks", hash: "/hooks", icon: "\u21AA" },
   { label: "Profiles", hash: "/profiles", icon: "\u2726" },
+  { label: "Usage", hash: "/usage", icon: "\u25A8" },
 ];
 
 type NavLinkProps = {
