@@ -3,7 +3,7 @@ import { getProjectDisplayName } from "../../lib/api";
 type ScopeBannerProps = {
   projectPath: string | null;
   /** Which config domain this page manages — determines the "writes to" label */
-  configType?: "plugins" | "hooks" | "mcp";
+  configType?: "plugins" | "hooks" | "mcp" | "skills";
   onClear?: () => void;
 };
 
@@ -19,6 +19,10 @@ const CONFIG_FILES: Record<string, { global: string; project: (p: string) => str
   mcp: {
     global: "~/.claude.json",
     project: (p) => `${p}/.mcp.json`,
+  },
+  skills: {
+    global: "~/.claude/settings.json",
+    project: (p) => `${p}/.claude/settings.json`,
   },
 };
 
