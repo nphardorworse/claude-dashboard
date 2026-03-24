@@ -1,6 +1,7 @@
 export type TokenLevel = "low" | "medium" | "high";
 
-export type PluginEnableSource = "global" | "project" | "default";
+export type EnableSource = "global" | "project" | "default";
+export type PluginEnableSource = EnableSource;
 
 export type PluginInfo = {
   id: string;
@@ -24,6 +25,35 @@ export type PluginsResponse = {
   plugins: PluginInfo[];
   activeCount: number;
   totalEstimatedTokens: number;
+};
+
+export type SkillSource = "user" | "plugin" | "project";
+
+export type SkillInfo = {
+  id: string;
+  name: string;
+  description: string;
+  source: SkillSource;
+  pluginId?: string;
+  pluginName?: string;
+  enabled: boolean;
+  enableSource: EnableSource;
+  parentPluginEnabled: boolean;
+  installPath: string;
+  contentSizeBytes: number;
+  estimatedTokens: number;
+  tokenLevel: TokenLevel;
+};
+
+export type SkillsResponse = {
+  skills: SkillInfo[];
+  activeCount: number;
+  totalEstimatedTokens: number;
+};
+
+export type SkillToggleRequest = {
+  skillId: string;
+  enabled: boolean;
 };
 
 export type ToggleRequest = {
