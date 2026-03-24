@@ -6,6 +6,7 @@ import { SkillsPage } from "./components/skills/SkillsPage";
 import { ProfilesPage } from "./components/profiles/ProfilesPage";
 import { McpPage } from "./components/mcp/McpPage";
 import { HooksPage } from "./components/hooks-manager/HooksPage";
+import { UsagePage } from "./components/usage/UsagePage";
 import { useRoute } from "./hooks/use-route";
 import { useProject } from "./hooks/use-project";
 import { useTheme } from "./hooks/use-theme";
@@ -23,6 +24,7 @@ const PageRouter = ({ projectPath, onClearProject }: PageRouterProps) => {
   if (route === "/mcp") return <McpPage projectPath={projectPath} onClearProject={onClearProject} />;
   if (route === "/hooks") return <HooksPage projectPath={projectPath} onClearProject={onClearProject} />;
   if (route === "/profiles") return <ProfilesPage projectPath={projectPath} onClearProject={onClearProject} />;
+  if (route === "/usage") return <UsagePage projectPath={projectPath} onClearProject={onClearProject} />;
   return <OverviewPage projectPath={projectPath} onClearProject={onClearProject} />;
 };
 
