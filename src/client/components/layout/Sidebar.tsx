@@ -15,7 +15,6 @@ const NAV_ITEMS: NavItem[] = [
   { label: "MCP Servers", hash: "/mcp", icon: "\u2630" },
   { label: "Hooks", hash: "/hooks", icon: "\u21AA" },
   { label: "Profiles", hash: "/profiles", icon: "\u2726" },
-  { label: "Usage", hash: "/usage", icon: "\u25A8" },
 ];
 
 type NavLinkProps = {
