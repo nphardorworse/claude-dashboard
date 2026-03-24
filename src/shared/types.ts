@@ -1,0 +1,235 @@
+export type TokenLevel = "low" | "medium" | "high";
+
+export type PluginEnableSource = "global" | "project" | "default";
+
+export type PluginInfo = {
+  id: string;
+  name: string;
+  marketplace: string;
+  description: string;
+  enabled: boolean;
+  enableSource: PluginEnableSource;
+  version: string;
+  installPath: string;
+  lastUpdated: string;
+  contentSizeBytes: number;
+  estimatedTokens: number;
+  tokenLevel: TokenLevel;
+  hasAgents: boolean;
+  hasSkills: boolean;
+  hasMcp: boolean;
+};
+
+export type PluginsResponse = {
+  plugins: PluginInfo[];
+  activeCount: number;
+  totalEstimatedTokens: number;
+};
+
+export type ToggleRequest = {
+  pluginId: string;
+  enabled: boolean;
+};
+
+export type BulkToggleRequest = {
+  pluginIds: string[];
+  enabled: boolean;
+};
+
+export type HealthWarning = {
+  level: "info" | "warning" | "error";
+  message: string;
+  category: "cost" | "plugins" | "mcp" | "hooks";
+};
+
+export type TopPluginByCost = {
+  name: string;
+  estimatedTokens: number;
+  tokenLevel: TokenLevel;
+};
+
+export type HealthSummary = {
+  activePlugins: number;
+  totalPlugins: number;
+  activeMcpServers: number;
+  hookEventCount: number;
+  totalHookCommands: number;
+  estimatedTokensPerTurn: number;
+  tokenBudgetLevel: TokenLevel;
+  activeProfile: string | null;
+};
+
+export type HealthResponse = {
+  scope: string | null;
+  summary: HealthSummary;
+  warnings: HealthWarning[];
+  topPluginsByCost: TopPluginByCost[];
+};
+
+export type ModelUsage = {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  costUSD: number;
+};
+
+export type ProjectInfo = {
+  path: string;
+  name: string;
+  lastCost: number | null;
+  totalCostUSD: number | null;
+  modelUsage: ModelUsage[];
+  sessions: number;
+  hasSettings: boolean;
+  hasLocalSettings: boolean;
+  hasMcpJson: boolean;
+};
+
+export type ProjectsResponse = {
+  projects: ProjectInfo[];
+};
+
+export type SessionMeta = {
+  sessionId: string;
+  sessionName: string;
+  projectPath: string;
+  startTime: string;
+  durationMinutes: number;
+  userMessages: number;
+  assistantMessages: number;
+  toolCounts: Record<string, number>;
+  inputTokens: number;
+  outputTokens: number;
+  firstPrompt: string;
+  gitCommits: number;
+  linesAdded: number;
+  linesRemoved: number;
+  filesModified: number;
+  usesMcp: boolean;
+  usesWebSearch: boolean;
+  usesTaskAgent: boolean;
+  toolErrors: number;
+};
+
+export type SessionsResponse = {
+  sessions: SessionMeta[];
+  totalTokens: number;
+  totalSessions: number;
+};
+
+export type ProjectSettingsResponse = {
+  projectPath: string;
+  settings: Record<string, unknown> | null;
+  localSettings: Record<string, unknown> | null;
+  mcpServers: Record<string, unknown> | null;
+  effectiveConfig: {
+    permissions: { allow: string[] };
+    hooks: Record<string, unknown[]>;
+    enabledMcpServers: string[];
+  };
+};
+
+// --- JSONL parser types ---
+
+export type TurnUsage = {
+  turnIndex: number;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  costUSD: number;
+  totalContextSize: number;
+  userPrompt: string;
+  toolsUsed: string[];
+  timestamp: string;
+  durationMs: number;
+  contextAtStart: number;
+  toolOutputTokens: number;
+};
+
+export type SessionAnalysis = {
+  sessionId: string;
+  sessionName: string;
+  projectPath: string;
+  turns: TurnUsage[];
+  totalCostUSD: number;
+  cacheHitRate: number;
+  contextGrowthRate: number;
+  peakContextSize: number;
+  systemPromptEstimate: number;
+  modelBreakdown: Record<
+    string,
+    { inputTokens: number; outputTokens: number; costUSD: number }
+  >;
+};
+
+// --- Usage types ---
+
+export type ProjectUsage = {
+  name: string;
+  path: string;
+  sessions: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  estimatedCostUSD: number;
+  percentage: number;
+};
+
+export type UsageResponse = {
+  totalEstimatedCostUSD: number;
+  totalSessions: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  pricingBasis: "sonnet";
+  dataSource: "session-meta";
+  projects: ProjectUsage[];
+};
+
+// --- Plan limits types ---
+
+export type PlanLimits = {
+  sessionTokenLimit: number | null;
+  weeklyTokenLimit: number | null;
+};
+
+export type WindowedProjectUsage = {
+  name: string;
+  path: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  estimatedCostUSD: number;
+  sessions: number;
+};
+
+export type UsageWindow = {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalTokens: number;
+  totalEstimatedCostUSD: number;
+  totalSessions: number;
+  limit: number | null;
+  percentage: number | null;
+  resetsInMs: number;
+  projects: WindowedProjectUsage[];
+};
+
+export type WindowedUsageResponse = {
+  session: UsageWindow;
+  weekly: UsageWindow;
+  limits: PlanLimits;
+  pricingBasis: "sonnet";
+};
+
+// --- Insights types ---
+
+export type Insight = {
+  id: string;
+  level: "info" | "warning" | "tip";
+  title: string;
+  message: string;
+  category: "context" | "cache" | "model" | "session" | "plugins";
+};
