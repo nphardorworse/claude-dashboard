@@ -100,6 +100,11 @@ type FileMapRow = { what: string; file: string; scope: string };
 const FILE_MAP_ROWS: FileMapRow[] = [
   { what: "Global settings", file: "~/.claude/settings.json", scope: "User" },
   {
+    what: "Global local settings",
+    file: "~/.claude/settings.local.json",
+    scope: "Machine-local (gitignored)",
+  },
+  {
     what: "Global MCP servers",
     file: "~/.claude.json",
     scope: "User",
@@ -119,6 +124,11 @@ const FILE_MAP_ROWS: FileMapRow[] = [
     what: "Project settings",
     file: "<project>/.claude/settings.json",
     scope: "Project",
+  },
+  {
+    what: "Project local settings",
+    file: "<project>/.claude/settings.local.json",
+    scope: "Machine-local (gitignored)",
   },
   {
     what: "Project MCP servers",

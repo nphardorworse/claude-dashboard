@@ -67,7 +67,7 @@ const PriorityLabels = () => (
 );
 
 const BEGINNER_EXPLANATION =
-  "When you customize a setting for a specific project, it overrides the global setting. If no project setting exists, the global one applies. If neither exists, the default kicks in.";
+  "When you customize a setting for a specific project, it overrides the global setting. If no project setting exists, the global one applies. If neither exists, the default kicks in. There are also settings.local.json files (both global and per-project) for machine-specific settings like permissions — these are gitignored so they don't travel with your repo.";
 
 const BeginnerExplanation = () => (
   <p className="text-[12px] text-zinc-400 leading-relaxed mt-4 max-w-[480px] mx-auto text-center">
