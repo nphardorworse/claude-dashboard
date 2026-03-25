@@ -3,10 +3,16 @@ import { PATHS, getProjectPath, getMcpJsonPath } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
 import { checkMcpHealth } from "../lib/mcp-health";
 import { withFileLock } from "../lib/file-lock";
-import { PINNED_MCPS } from "../../shared/mcp-pinned";
+import { buildCatalog } from "../lib/catalog-builder";
 import { dirname } from "path";
 import type { McpServerHealth } from "../lib/mcp-health";
-import type { ClaudeJson, McpServerConfig, ProjectEntry } from "../lib/types";
+import type { ClaudeJson, ProjectEntry } from "../lib/types";
+import type { McpOrigin, McpServerConfig } from "../../shared/types";
+
+type DashboardConfig = {
+  pinnedMcpServers?: string[];
+  [key: string]: unknown;
+};
 
 type McpServerInfo = {
   name: string;
@@ -16,13 +22,6 @@ type McpServerInfo = {
   type: string;
   status: McpServerHealth["status"];
   source: "global" | "project-file" | "project-settings";
-};
-
-type AddServerRequest = {
-  name: string;
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
 };
 
 const buildServerList = (
@@ -46,56 +45,31 @@ const buildServerList = (
   }));
 };
 
-// Read per-project MCP servers stored inside ~/.claude.json → projects[path].mcpServers
-const readProjectMcpFromClaudeJson = async (
-  projectPath: string
-): Promise<Record<string, McpServerConfig>> => {
-  const claudeJson = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
-  const projectEntry = claudeJson?.projects?.[projectPath];
-  return projectEntry?.mcpServers ?? {};
-};
-
-// Collect disabled MCP server names from ~/.claude.json project entries (excludes pinned)
-const getDisabledServers = async (projectPath?: string): Promise<string[]> => {
-  const claudeJson = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
-  const projects = (claudeJson?.projects ?? {}) as Record<string, ProjectEntry>;
-
-  if (projectPath) {
-    // Single project
-    const entry = projects[projectPath];
-    if (!entry) return [];
-    return [
-      ...(entry.disabledMcpServers ?? []),
-      ...(entry.disabledMcpjsonServers ?? []),
-    ].filter((n) => !PINNED_MCPS.has(n));
-  }
-
-  // Global: aggregate all disabled MCPs across all projects (deduplicated, excluding pinned)
-  const disabled = new Set<string>();
-  for (const entry of Object.values(projects)) {
-    for (const name of entry.disabledMcpServers ?? []) disabled.add(name);
-    for (const name of entry.disabledMcpjsonServers ?? []) disabled.add(name);
-  }
-  for (const pinned of PINNED_MCPS) disabled.delete(pinned);
-  return Array.from(disabled).sort();
-};
-
 const mcp = new Hono();
 
-// GET /servers — list all MCP servers with health status + disabled list
+// GET /catalog — full MCP catalog with origin groups, health, and project status
+mcp.get("/catalog", async (c) => {
+  try {
+    const projectPath = await getProjectPath(c);
+    const catalog = await buildCatalog(projectPath ?? undefined);
+    return c.json(catalog);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
+// GET /servers — list all MCP servers with health status (backward compat)
 mcp.get("/servers", async (c) => {
   try {
     const projectPath = await getProjectPath(c);
     const healthResults = await checkMcpHealth();
-    const disabledServers = await getDisabledServers(projectPath);
 
     if (!projectPath) {
-      // Global: merge MCPs from ~/.claude.json config + health check (plugins/cloud MCPs)
       const data = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
       const mcpServers = data?.mcpServers ?? {};
       const configServers = buildServerList(mcpServers, healthResults, "global");
 
-      // Health check discovers plugin/cloud MCPs not in ~/.claude.json
       const configNames = new Set(Object.keys(mcpServers));
       const extraServers = healthResults
         .filter((h) => !configNames.has(h.name))
@@ -111,39 +85,25 @@ mcp.get("/servers", async (c) => {
 
       const servers = [...configServers, ...extraServers];
       const connectedCount = servers.filter((s) => s.status === "connected").length;
-      // Filter out disabled names that are currently active (already shown above)
-      const activeNames = new Set(servers.map((s) => s.name));
-      const inactiveServers = disabledServers.filter((name) => !activeNames.has(name));
-      return c.json({ servers, connectedCount, disabledServers: inactiveServers, scope: "global" });
+      return c.json({ servers, connectedCount, scope: "global" });
     }
 
-    // Project scope: merge servers from .mcp.json AND ~/.claude.json projects[path].mcpServers
     const mcpJsonPath = getMcpJsonPath(projectPath);
     const mcpJsonData = await readJsonFile<ClaudeJson>(mcpJsonPath);
     const fileServers = mcpJsonData?.mcpServers ?? {};
 
-    const settingsServers = await readProjectMcpFromClaudeJson(projectPath);
+    const claudeJson = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
+    const settingsServers = claudeJson?.projects?.[projectPath]?.mcpServers ?? {};
 
     const fromFile = buildServerList(fileServers, healthResults, "project-file");
     const fromSettings = buildServerList(settingsServers, healthResults, "project-settings");
 
-    // Merge, dedup by name (file takes precedence)
     const seen = new Set(fromFile.map((s) => s.name));
     const merged = [...fromFile, ...fromSettings.filter((s) => !seen.has(s.name))];
 
     const connectedCount = merged.filter((s) => s.status === "connected").length;
-    const activeNames = new Set(merged.map((s) => s.name));
-    const inactiveServers = disabledServers.filter((name) => !activeNames.has(name));
 
-    // All known MCP names: config + health check (plugins/cloud MCPs aren't in mcpServers)
-    const globalData = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
-    const configNames = Object.keys(globalData?.mcpServers ?? {});
-    const healthNames = healthResults.map((h) => h.name);
-    const globalServerNames = [...new Set([...configNames, ...healthNames])].sort();
-    const projectEntry = (globalData?.projects ?? {})[projectPath] as ProjectEntry | undefined;
-    const projectDisabledMcps = projectEntry?.disabledMcpServers ?? [];
-
-    return c.json({ servers: merged, connectedCount, disabledServers: inactiveServers, globalServerNames, projectDisabledMcps, scope: "project" });
+    return c.json({ servers: merged, connectedCount, scope: "project" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
@@ -153,7 +113,12 @@ mcp.get("/servers", async (c) => {
 // POST /servers — add a new MCP server
 mcp.post("/servers", async (c) => {
   try {
-    const body = (await c.req.json()) as AddServerRequest;
+    const body = (await c.req.json()) as {
+      name: string;
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+    };
     const { name, command, args, env } = body;
 
     if (!name || typeof name !== "string" || !name.trim()) {
@@ -231,29 +196,73 @@ mcp.delete("/servers/:name", async (c) => {
   }
 });
 
-// PUT /project-disabled — set disabled MCPs for a specific project
-mcp.put("/project-disabled", async (c) => {
+// PUT /project-toggle — toggle MCP enable/disable for a specific project
+mcp.put("/project-toggle", async (c) => {
   try {
-    const { projectPath, servers } = await c.req.json<{ projectPath: string; servers: string[] }>();
-    if (!projectPath || typeof projectPath !== "string") {
-      return c.json({ error: "projectPath required" }, 400);
+    const { projectPath, mcpName, origin, action } = await c.req.json<{
+      projectPath: string;
+      mcpName: string;
+      origin: McpOrigin;
+      action: "enable" | "disable";
+    }>();
+
+    if (!projectPath || !mcpName || !origin || !action) {
+      return c.json({ error: "projectPath, mcpName, origin, and action are required" }, 400);
     }
-    if (!Array.isArray(servers)) {
-      return c.json({ error: "servers array required" }, 400);
+
+    // Check pinned — pinned MCPs cannot be disabled
+    if (action === "disable") {
+      const dashConfig = await readJsonFile<DashboardConfig>(PATHS.dashboardConfig);
+      const pinnedSet = new Set(dashConfig?.pinnedMcpServers ?? []);
+      if (pinnedSet.has(mcpName)) {
+        return c.json({ error: `"${mcpName}" is pinned and cannot be disabled` }, 409);
+      }
     }
 
     return withFileLock(PATHS.claudeJson, async () => {
       const claudeJson = (await readJsonFile<ClaudeJson>(PATHS.claudeJson)) ?? {};
       const projects = claudeJson.projects ?? {};
-      const projectEntry = projects[projectPath] ?? {};
+      const projEntry = (projects[projectPath] ?? {}) as ProjectEntry;
 
-      (projectEntry as ProjectEntry).disabledMcpServers = servers.filter((n) => !PINNED_MCPS.has(n));
+      if ((origin === "global" || origin === "cloud") && action === "disable") {
+        const disabled = new Set(projEntry.disabledMcpServers ?? []);
+        disabled.add(mcpName);
+        projEntry.disabledMcpServers = Array.from(disabled);
+      } else if ((origin === "global" || origin === "cloud") && action === "enable") {
+        projEntry.disabledMcpServers = (projEntry.disabledMcpServers ?? []).filter(
+          (n) => n !== mcpName
+        );
+      } else if (origin === "plugin" && action === "disable") {
+        const disabled = new Set(projEntry.disabledMcpjsonServers ?? []);
+        disabled.add(mcpName);
+        projEntry.disabledMcpjsonServers = Array.from(disabled);
+      } else if (origin === "plugin" && action === "enable") {
+        projEntry.disabledMcpjsonServers = (projEntry.disabledMcpjsonServers ?? []).filter(
+          (n) => n !== mcpName
+        );
+      } else if (origin === "personal" && action === "disable") {
+        if (projEntry.mcpServers) {
+          delete projEntry.mcpServers[mcpName];
+        }
+      } else if (origin === "global-disabled" && action === "enable") {
+        const sourceConfig = claudeJson.disabledMcpServers?.[mcpName];
+        if (!sourceConfig) {
+          return c.json({ error: `"${mcpName}" not found in global disabled MCPs` }, 404);
+        }
+        projEntry.mcpServers = projEntry.mcpServers ?? {};
+        projEntry.mcpServers[mcpName] = sourceConfig;
+      } else {
+        return c.json(
+          { error: `Unsupported combination: origin="${origin}", action="${action}"` },
+          400
+        );
+      }
 
-      projects[projectPath] = projectEntry;
+      projects[projectPath] = projEntry;
       claudeJson.projects = projects;
       await writeJsonFile(PATHS.claudeJson, claudeJson);
 
-      return c.json({ ok: true, disabled: servers.length });
+      return c.json({ ok: true, mcpName, action });
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -261,40 +270,77 @@ mcp.put("/project-disabled", async (c) => {
   }
 });
 
-// PUT /bulk-reenable — remove server names from disabled lists across all projects
-mcp.put("/bulk-reenable", async (c) => {
+// POST /copy-to-project — copy an MCP config into a project's personal MCPs
+mcp.post("/copy-to-project", async (c) => {
   try {
-    const { servers } = await c.req.json<{ servers: string[] }>();
-    if (!Array.isArray(servers) || servers.length === 0) {
-      return c.json({ error: "servers array required" }, 400);
+    const { mcpName, targetProjectPath } = await c.req.json<{
+      mcpName: string;
+      targetProjectPath: string;
+    }>();
+
+    if (!mcpName || !targetProjectPath) {
+      return c.json({ error: "mcpName and targetProjectPath are required" }, 400);
     }
 
-    // Skip pinned MCPs — they should never be in disabled lists
-    const toRemove = new Set(servers.filter((n) => !PINNED_MCPS.has(n)));
-    if (toRemove.size === 0) {
-      return c.json({ ok: true, projectsUpdated: 0 });
+    // Find the MCP config from the catalog
+    const catalog = await buildCatalog();
+    let foundConfig: McpServerConfig | null = null;
+
+    for (const group of catalog.groups) {
+      for (const entry of group.entries) {
+        if (entry.name === mcpName) {
+          foundConfig = entry.config;
+          break;
+        }
+      }
+      if (foundConfig) break;
+    }
+
+    if (!foundConfig) {
+      return c.json({ error: `MCP "${mcpName}" not found in catalog` }, 404);
+    }
+
+    if (!foundConfig.command && !foundConfig.url) {
+      return c.json(
+        { error: `MCP "${mcpName}" has no command or url — cannot copy cloud MCPs` },
+        400
+      );
     }
 
     return withFileLock(PATHS.claudeJson, async () => {
       const claudeJson = (await readJsonFile<ClaudeJson>(PATHS.claudeJson)) ?? {};
-      const projects = (claudeJson.projects ?? {}) as Record<string, ProjectEntry>;
+      const projects = claudeJson.projects ?? {};
+      const projEntry = (projects[targetProjectPath] ?? {}) as ProjectEntry;
 
-      let updated = 0;
-      for (const entry of Object.values(projects)) {
-        if (entry.disabledMcpServers) {
-          const before = entry.disabledMcpServers.length;
-          entry.disabledMcpServers = entry.disabledMcpServers.filter((n) => !toRemove.has(n));
-          if (entry.disabledMcpServers.length < before) updated++;
-        }
-        if (entry.disabledMcpjsonServers) {
-          entry.disabledMcpjsonServers = entry.disabledMcpjsonServers.filter((n) => !toRemove.has(n));
-        }
-      }
+      projEntry.mcpServers = projEntry.mcpServers ?? {};
+      projEntry.mcpServers[mcpName] = foundConfig;
 
+      projects[targetProjectPath] = projEntry;
       claudeJson.projects = projects;
       await writeJsonFile(PATHS.claudeJson, claudeJson);
 
-      return c.json({ ok: true, projectsUpdated: updated });
+      return c.json({ ok: true, mcpName, targetProjectPath });
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
+// PUT /pinned — set the pinned MCP list
+mcp.put("/pinned", async (c) => {
+  try {
+    const { servers } = await c.req.json<{ servers: string[] }>();
+
+    if (!Array.isArray(servers)) {
+      return c.json({ error: "servers array required" }, 400);
+    }
+
+    return withFileLock(PATHS.dashboardConfig, async () => {
+      const config = (await readJsonFile<DashboardConfig>(PATHS.dashboardConfig)) ?? {};
+      config.pinnedMcpServers = servers;
+      await writeJsonFile(PATHS.dashboardConfig, config);
+      return c.json({ ok: true, pinned: servers.length });
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
