@@ -1,6 +1,11 @@
 export const DisclaimerCard = () => (
   <div className="rounded-xl bg-amber-500/10 ring-1 ring-amber-500/20 p-5">
-    <h3 className="text-[13px] font-semibold text-amber-400 mb-3">
+    <h3 className="text-[13px] font-semibold text-amber-400 mb-3 flex items-center gap-2">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+        <line x1="12" y1="9" x2="12" y2="13" />
+        <line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
       Important: These numbers are approximations.
     </h3>
     <div className="text-[12px] text-zinc-300 leading-relaxed space-y-3">

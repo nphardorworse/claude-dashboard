@@ -78,6 +78,43 @@ const BeginnerExplanation = () => (
 export const ConfigDiagram = ({ level }: ConfigDiagramProps) => {
   const isBeginner = level === "beginner";
 
+  const layerElements = layers.map((layer) => (
+    <g key={layer.label}>
+      <rect
+        x={CENTER_X - RECT_WIDTH / 2}
+        y={layer.y}
+        width={RECT_WIDTH}
+        height={RECT_HEIGHT}
+        fill={
+          layer.highlight
+            ? "var(--overlay-subtle)"
+            : "var(--surface-raised)"
+        }
+        stroke={LINE_STROKE}
+        strokeWidth={1.5}
+        rx={8}
+      />
+      <text
+        x={CENTER_X - RECT_WIDTH / 2 + 20}
+        y={layer.y + 28}
+        fontSize={13}
+        fontWeight={600}
+        fill={TEXT_PRIMARY}
+      >
+        {layer.label}
+      </text>
+      <text
+        x={CENTER_X + RECT_WIDTH / 2 - 20}
+        y={layer.y + 28}
+        fontSize={11}
+        fill={TEXT_MUTED}
+        textAnchor="end"
+      >
+        {layer.path}
+      </text>
+    </g>
+  ));
+
   return (
     <div className="w-full overflow-x-auto">
       <svg
@@ -88,42 +125,7 @@ export const ConfigDiagram = ({ level }: ConfigDiagramProps) => {
       >
         <PriorityLabels />
 
-        {layers.map((layer) => (
-          <g key={layer.label}>
-            <rect
-              x={CENTER_X - RECT_WIDTH / 2}
-              y={layer.y}
-              width={RECT_WIDTH}
-              height={RECT_HEIGHT}
-              fill={
-                layer.highlight
-                  ? "var(--overlay-subtle)"
-                  : "var(--surface-raised)"
-              }
-              stroke={LINE_STROKE}
-              strokeWidth={1.5}
-              rx={8}
-            />
-            <text
-              x={CENTER_X - RECT_WIDTH / 2 + 20}
-              y={layer.y + 28}
-              fontSize={13}
-              fontWeight={600}
-              fill={TEXT_PRIMARY}
-            >
-              {layer.label}
-            </text>
-            <text
-              x={CENTER_X + RECT_WIDTH / 2 - 20}
-              y={layer.y + 28}
-              fontSize={11}
-              fill={TEXT_MUTED}
-              textAnchor="end"
-            >
-              {layer.path}
-            </text>
-          </g>
-        ))}
+        {layerElements}
 
         <ArrowWithLabel y={65} />
         <ArrowWithLabel y={130} />

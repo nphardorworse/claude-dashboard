@@ -328,7 +328,7 @@ const TokenEconomicsSection = ({ level }: { level: Level }) => {
           </h3>
           <p>
             Every time Claude reads your instructions, plugins, skills, and MCP
-            tool definitions, it consumes "tokens" (roughly 4 characters = 1
+            tool definitions, it consumes "tokens" (roughly 3.5 characters = 1
             token). More plugins = more tokens per message = higher cost and
             slower responses. The dashboard estimates how many tokens your
             current setup adds to every conversation turn.
@@ -345,7 +345,7 @@ const TokenEconomicsSection = ({ level }: { level: Level }) => {
             </li>
             <li>
               It estimates the token count for each using character-based
-              approximation (~4 chars/token).
+              approximation (~3.5 chars/token).
             </li>
             <li>
               It sums them up to show your estimated tokens per turn, with
@@ -374,7 +374,7 @@ const TokenEconomicsSection = ({ level }: { level: Level }) => {
         <p>
           Context window consumption per turn. Each enabled plugin injects its
           CLAUDE.md instructions + skill definitions + MCP tool JSON schemas
-          into the system prompt. Token estimation uses a ~4 chars/token
+          into the system prompt. Token estimation uses a ~3.5 chars/token
           heuristic applied to raw file content. Actual tokenization varies by
           model but the approximation is sufficient for relative comparison.
         </p>
@@ -389,7 +389,7 @@ const TokenEconomicsSection = ({ level }: { level: Level }) => {
             .mcp.json (tool definitions).
           </li>
           <li>
-            Sums character counts, applies the 4:1 ratio, and adds baseline
+            Sums character counts, applies the 3.5:1 ratio, and adds baseline
             overhead (~2k tokens for Claude Code's own system prompt).
           </li>
           <li>

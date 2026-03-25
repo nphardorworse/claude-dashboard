@@ -90,28 +90,32 @@ const CascadeEffectLine = ({ effect }: { effect: CascadeEffect }) => {
   );
 };
 
-const CascadeCard = ({ item }: { item: CascadeItem }) => (
-  <div className="rounded-lg bg-[var(--surface-raised)] p-4 ring-1 ring-[var(--border-hairline)]">
-    <span
-      className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 mb-3 ${item.badgeClass}`}
-    >
-      {item.action}
-    </span>
-    <div className="text-[12px] font-mono space-y-0.5 ml-1">
-      {item.effects.map((effect) => (
-        <CascadeEffectLine key={effect.text} effect={effect} />
-      ))}
-    </div>
-  </div>
-);
+const CascadeCard = ({ item }: { item: CascadeItem }) => {
+  const effectLines = item.effects.map((effect) => (
+    <CascadeEffectLine key={effect.text} effect={effect} />
+  ));
 
-const CascadeList = () => (
-  <div className="space-y-3">
-    {CASCADE_ITEMS.map((item) => (
-      <CascadeCard key={item.action} item={item} />
-    ))}
-  </div>
-);
+  return (
+    <div className="rounded-lg bg-[var(--surface-raised)] p-4 ring-1 ring-[var(--border-hairline)]">
+      <span
+        className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 mb-3 ${item.badgeClass}`}
+      >
+        {item.action}
+      </span>
+      <div className="text-[12px] font-mono space-y-0.5 ml-1">
+        {effectLines}
+      </div>
+    </div>
+  );
+};
+
+const CascadeList = () => {
+  const cards = CASCADE_ITEMS.map((item) => (
+    <CascadeCard key={item.action} item={item} />
+  ));
+
+  return <div className="space-y-3">{cards}</div>;
+};
 
 const BeginnerExample = () => (
   <div className="mt-4 rounded-lg bg-[var(--overlay-faint)] p-4 ring-1 ring-[var(--border-hairline)]">
