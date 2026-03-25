@@ -39,7 +39,7 @@ const NavLink = ({ item, isActive }: NavLinkProps) => {
   return (
     <a
       href={`#${item.hash}`}
-      className={`group relative flex items-center gap-3 px-5 py-2.5 text-[13px] font-medium transition-snappy ${
+      className={`group relative flex items-center gap-3 px-5 py-2 text-[13px] font-medium transition-snappy ${
         isActive ? "text-zinc-50" : "text-zinc-400 hover:text-zinc-200"
       }`}
     >
@@ -172,10 +172,10 @@ export const Sidebar = ({
 
       <ProjectSelector projectPath={projectPath} onSelect={onSelectProject} />
 
-      <NavList currentRoute={route} />
-
-      {/* Spacer — push usage widget + footer to bottom */}
-      <div className="flex-1" />
+      {/* Scrollable nav — grows but scrolls when sidebar is short */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <NavList currentRoute={route} />
+      </div>
 
       {/* Plan usage — always visible */}
       <UsageWidget selectedProjectPath={projectPath} />
