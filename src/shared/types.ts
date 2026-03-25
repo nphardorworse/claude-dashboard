@@ -221,13 +221,16 @@ export type UsageResponse = {
 // --- Plan limits types ---
 
 export type PlanLimits = {
-  sessionTokenLimit: number | null;
-  weeklyTokenLimit: number | null;
+  sessionMessageLimit: number | null;  // messages (API calls) per 5hr window (~225 for Max 5x)
+  weeklyMessageLimit: number | null;   // messages per weekly window
+  sessionResetsAt: string | null;      // time-of-day "HH:MM" — auto-advances to next occurrence
+  weeklyResetsAt: string | null;       // ISO timestamp — auto-advances by 7 days when past
 };
 
 export type WindowedProjectUsage = {
   name: string;
   path: string;
+  messages: number;
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
@@ -236,14 +239,15 @@ export type WindowedProjectUsage = {
 };
 
 export type UsageWindow = {
+  totalMessages: number;               // primary metric — API calls (rate-limited)
+  messageLimit: number | null;
+  messagePercentage: number | null;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalTokens: number;
   totalEstimatedCostUSD: number;
   totalSessions: number;
-  limit: number | null;
-  percentage: number | null;
-  resetsInMs: number;
+  resetsInMs: number;                  // ms until window resets (0 if unknown)
   projects: WindowedProjectUsage[];
 };
 
@@ -262,4 +266,47 @@ export type Insight = {
   title: string;
   message: string;
   category: "context" | "cache" | "model" | "session" | "plugins";
+};
+
+// --- MCP Catalog types ---
+
+export type McpOrigin = "global" | "global-disabled" | "plugin" | "project" | "personal" | "cloud";
+
+export type ProjectMcpStatus = "active" | "disabled" | "available";
+
+export type McpServerConfig = {
+  command?: string;
+  url?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  type?: string;
+};
+
+export type McpCatalogEntry = {
+  name: string;
+  origin: McpOrigin;
+  pluginName?: string;
+  pluginNames?: string[];
+  sourceProject?: string;
+  config: McpServerConfig;
+  health: "connected" | "needs_auth" | "failed" | "unknown";
+  isPinned: boolean;
+  projectStatus?: ProjectMcpStatus;
+};
+
+export type McpCatalogGroup = {
+  label: string;
+  origin: McpOrigin;
+  pluginName?: string;
+  entries: McpCatalogEntry[];
+};
+
+export type CatalogResponse = {
+  scope: "global" | "project";
+  groups: McpCatalogGroup[];
+  active?: McpCatalogGroup[];
+  disabled?: McpCatalogGroup[];
+  available?: McpCatalogGroup[];
+  totalCount: number;
+  connectedCount: number;
 };
