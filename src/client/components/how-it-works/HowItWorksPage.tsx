@@ -9,98 +9,15 @@ import { DependencyCascade } from "./DependencyCascade";
 import { DisclaimerCard } from "./DisclaimerCard";
 import { WalkthroughGrid } from "./WalkthroughGrid";
 import { QuickStartSteps } from "./QuickStartSteps";
+import {
+  PluginsIcon,
+  SkillsIcon,
+  McpIcon,
+  HooksIcon,
+  ProfilesIcon,
+} from "../shared/NavIcons";
 
 type Level = "beginner" | "advanced";
-
-// ---------------------------------------------------------------------------
-// Icons (small inline SVGs for concept cards)
-// ---------------------------------------------------------------------------
-
-const PluginIcon = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <path
-      d="M6 1v3H4a1 1 0 00-1 1v2a2 2 0 104 0V5h2v2a2 2 0 104 0V5a1 1 0 00-1-1h-2V1"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M3 9v3a1 1 0 001 1h8a1 1 0 001-1V9"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const SkillIcon = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <path
-      d="M8 1l1.5 3 3.5.5-2.5 2.5.5 3.5L8 9l-3 1.5.5-3.5L3 4.5l3.5-.5L8 1z"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M5 12l-2 3M11 12l2 3"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-    />
-  </svg>
-);
-
-const McpIcon = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <rect
-      x="1"
-      y="4"
-      width="14"
-      height="8"
-      rx="1.5"
-      stroke="currentColor"
-      strokeWidth="1.3"
-    />
-    <circle cx="4.5" cy="8" r="1" fill="currentColor" />
-    <circle cx="8" cy="8" r="1" fill="currentColor" />
-    <circle cx="11.5" cy="8" r="1" fill="currentColor" />
-  </svg>
-);
-
-const HookIcon = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <path
-      d="M8 1v5M5 3l3 3 3-3M3 9h10M3 12h10"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const ProfileIcon = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <rect
-      x="2"
-      y="2"
-      width="12"
-      height="12"
-      rx="2"
-      stroke="currentColor"
-      strokeWidth="1.3"
-    />
-    <path
-      d="M2 6h12M6 6v8"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-    />
-  </svg>
-);
 
 // ---------------------------------------------------------------------------
 // Concept card data
@@ -110,31 +27,31 @@ type ConceptItem = { icon: ReactNode; title: string; description: string };
 
 const BEGINNER_CONCEPTS: ConceptItem[] = [
   {
-    icon: PluginIcon,
+    icon: <PluginsIcon />,
     title: "Plugin",
     description:
       "A plugin is like a browser extension for Claude Code. It adds new capabilities \u2014 code review, test-driven development, design skills, etc. Each plugin is a directory containing instructions, skills, and optionally MCP server configs. You can enable/disable plugins globally or per-project.",
   },
   {
-    icon: SkillIcon,
+    icon: <SkillsIcon />,
     title: "Skill",
     description:
       'A skill is a specific capability provided by a plugin \u2014 like "code review", "write tests", or "create a PR". You invoke skills with slash commands (e.g., /commit). You can disable individual skills without disabling the whole plugin.',
   },
   {
-    icon: McpIcon,
+    icon: <McpIcon />,
     title: "MCP Server",
     description:
       "MCP (Model Context Protocol) servers give Claude access to external tools and data \u2014 a knowledge base, a documentation service, a web search API, etc. Some come bundled with plugins, others you add manually. They can be global (available everywhere) or project-specific.",
   },
   {
-    icon: HookIcon,
+    icon: <HooksIcon />,
     title: "Hook",
     description:
       'Hooks are shell commands that run automatically when certain events happen \u2014 like before a tool is used, after a message is sent, or when a session starts. They\'re useful for enforcing rules (e.g., "always run linting before committing").',
   },
   {
-    icon: ProfileIcon,
+    icon: <ProfilesIcon />,
     title: "Profile",
     description:
       'A profile is a saved set of enabled plugins \u2014 like a preset. Instead of toggling 20 plugins one by one, you switch to a profile and all the right plugins activate. The dashboard comes with presets like "core" (minimal), "mobile" (React Native focused), "web", and "full".',
@@ -143,31 +60,31 @@ const BEGINNER_CONCEPTS: ConceptItem[] = [
 
 const ADVANCED_CONCEPTS: ConceptItem[] = [
   {
-    icon: PluginIcon,
+    icon: <PluginsIcon />,
     title: "Plugin",
     description:
       "Directories in ~/.claude/plugins/cache/ scanned from installed_plugins.json. Each contains skill definitions (.md files), optional .mcp.json, and metadata. Resolution: project enabledPlugins > global enabledPlugins > default (enabled). Disabling a plugin disables all its skills and bundled MCPs.",
   },
   {
-    icon: SkillIcon,
+    icon: <SkillsIcon />,
     title: "Skill",
     description:
       "Markdown files within plugin directories that define specialized prompts and tool-use patterns. Registered via frontmatter (name, description). Invoked via the Skill tool or slash commands. Can be toggled independently in settings.json under disabledSkills.",
   },
   {
-    icon: McpIcon,
+    icon: <McpIcon />,
     title: "MCP Server",
     description:
       "Stdio or HTTP servers implementing the MCP protocol. Six source origins: global (~/.claude.json), global-disabled (disabledMcpServers), plugin (.mcp.json in plugin dirs), project (<project>/.mcp.json), personal (projects[path].mcpServers), cloud (Anthropic-hosted, runtime only). The dashboard aggregates all sources into a unified catalog.",
   },
   {
-    icon: HookIcon,
+    icon: <HooksIcon />,
     title: "Hook",
     description:
       "Shell commands in settings.json keyed by event type (PreToolUse, PostToolUse, SessionStart, etc.). Optional matcher field filters by tool name. Execute synchronously in the Claude Code process. Independent of plugins \u2014 they don't belong to any plugin and aren't affected by plugin toggles.",
   },
   {
-    icon: ProfileIcon,
+    icon: <ProfilesIcon />,
     title: "Profile",
     description:
       "JSON files in ~/.claude/profiles/ containing { enabledPlugins: string[] }. Switching a profile overwrites the global enabledPlugins list in settings.json. All skills and bundled MCPs of the enabled plugins become active. CLI shortcut: claude-profile <name>.",
