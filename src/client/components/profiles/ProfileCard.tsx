@@ -175,14 +175,14 @@ export const ProfileCard = ({
             <button
               onClick={handleEdit}
               title="Edit profile"
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-600 transition-snappy hover:bg-[var(--overlay-subtle)] hover:text-zinc-300"
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-snappy hover:bg-[var(--overlay-subtle)] hover:text-zinc-300"
             >
               <PencilIcon />
             </button>
             <button
               onClick={handleDeleteClick}
               title="Delete profile"
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-600 transition-snappy hover:bg-red-500/10 hover:text-red-400"
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-snappy hover:bg-red-500/10 hover:text-red-400"
             >
               <TrashIcon />
             </button>

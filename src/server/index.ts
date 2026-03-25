@@ -36,7 +36,9 @@ app.route("/api/usage", usage);
 const PORT = 3847;
 
 serve({ fetch: app.fetch, port: PORT }, () => {
-  console.log(`Claude Dashboard server running on http://localhost:${PORT}`);
+  console.log(
+    `Claude Code Dashboard server running on http://localhost:${PORT}`,
+  );
 });
 
 export default app;

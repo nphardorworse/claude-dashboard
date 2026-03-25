@@ -19,7 +19,7 @@ const plugins = new Hono();
 // GET / — scan all plugins and return enriched list + summary
 plugins.get("/", async (c) => {
   try {
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
 
     const pluginList = await scanPlugins(
@@ -68,7 +68,7 @@ plugins.put("/toggle", async (c) => {
       return c.json({ error: "Invalid request: pluginId and enabled required" }, 400);
     }
 
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
 
     if (projectPath) {
@@ -104,7 +104,7 @@ plugins.put("/bulk-toggle", async (c) => {
       );
     }
 
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
 
     if (projectPath) {

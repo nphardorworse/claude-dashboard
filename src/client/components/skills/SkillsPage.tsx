@@ -3,7 +3,7 @@ import type { SkillInfo, SkillsResponse } from "../../../shared/types";
 import { buildScopedUrl, getProjectDisplayName } from "../../lib/api";
 import { PageShell } from "../layout/PageShell";
 import { ScopeBanner } from "../shared/ScopeBanner";
-import { CategoryFilter } from "../plugins/CategoryFilter";
+import { CategoryFilter, type CategoryItem } from "../plugins/CategoryFilter";
 import { SkillGrid } from "./SkillGrid";
 
 const formatTokenCount = (tokens: number): string => {
@@ -23,17 +23,19 @@ const SummaryBar = ({
   totalEstimatedTokens: number;
 }) => {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3">
-      <p className="text-sm text-zinc-300">
-        <span className="font-semibold text-zinc-100">{activeCount}</span>
-        {" of "}
-        <span className="font-semibold text-zinc-100">{totalCount}</span>
-        {" skills active"}
-        <span className="mx-2 text-zinc-600">|</span>
-        <span className="text-zinc-400">
-          ~{formatTokenCount(totalEstimatedTokens)} tokens/turn
-        </span>
-      </p>
+    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] px-4 py-3 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+        <p className="text-sm text-zinc-300">
+          <span className="font-semibold text-zinc-100">{activeCount}</span>
+          {" of "}
+          <span className="font-semibold text-zinc-100">{totalCount}</span>
+          {" skills active"}
+          <span className="mx-2 text-zinc-500">|</span>
+          <span className="text-zinc-400">
+            ~{formatTokenCount(totalEstimatedTokens)} tokens/turn
+          </span>
+        </p>
+      </div>
     </div>
   );
 };
@@ -54,14 +56,14 @@ const StatusFilter = ({
   onChange: (value: StatusFilterOption) => void;
 }) => {
   return (
-    <div className="flex rounded-lg border border-zinc-700 bg-zinc-900">
+    <div className="flex rounded-lg border border-[var(--border-accent)] bg-[var(--surface-raised)]">
       {STATUS_OPTIONS.map((opt) => (
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
           className={`px-3 py-2 text-xs font-medium transition-colors ${
             active === opt.value
-              ? "bg-zinc-700 text-zinc-100"
+              ? "bg-[var(--overlay-medium)] text-zinc-100"
               : "text-zinc-400 hover:text-zinc-200"
           } ${opt.value === "all" ? "rounded-l-lg" : ""} ${opt.value === "inactive" ? "rounded-r-lg" : ""}`}
         >
@@ -186,18 +188,25 @@ export const SkillsPage = ({ projectPath = null, onClearProject }: SkillsPagePro
     [projectPath, loadSkills]
   );
 
-  const categories = useMemo(() => {
-    const sources = new Set<string>();
+  const categories = useMemo((): CategoryItem[] => {
+    const items: CategoryItem[] = [];
+    const seen = new Set<string>();
     for (const skill of skills) {
       if (skill.source === "plugin" && skill.pluginName) {
-        sources.add(`Plugin: ${skill.pluginName}`);
-      } else if (skill.source === "user") {
-        sources.add("User");
-      } else if (skill.source === "project") {
-        sources.add("Project");
+        const key = `plugin:${skill.pluginName}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          items.push({ value: `Plugin: ${skill.pluginName}`, label: skill.pluginName, prefix: "PLG" });
+        }
+      } else if (skill.source === "user" && !seen.has("user")) {
+        seen.add("user");
+        items.push({ value: "User", label: "User", prefix: "USR" });
+      } else if (skill.source === "project" && !seen.has("project")) {
+        seen.add("project");
+        items.push({ value: "Project", label: "Project", prefix: "PRJ" });
       }
     }
-    return Array.from(sources).sort();
+    return items.sort((a, b) => a.label.localeCompare(b.label));
   }, [skills]);
 
   const filteredSkills = useMemo(() => {
@@ -260,7 +269,7 @@ export const SkillsPage = ({ projectPath = null, onClearProject }: SkillsPagePro
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search skills..."
-                className="flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-blue-500"
+                className="flex-1 rounded-lg border border-[var(--border-accent)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-blue-500"
               />
               <StatusFilter active={statusFilter} onChange={setStatusFilter} />
             </div>

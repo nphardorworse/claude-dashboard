@@ -33,7 +33,7 @@ const CostBar = ({ plugin, maxTokens }: CostBarProps) => {
         {plugin.name}
       </span>
       <div className="flex-1">
-        <div className="h-5 w-full rounded-full bg-zinc-800">
+        <div className="h-5 w-full rounded-full bg-[var(--overlay-subtle)]">
           <div
             className={`h-5 rounded-full ${barColorClass} transition-all duration-300`}
             style={{ width: `${Math.max(widthPercent, 2)}%` }}
@@ -55,24 +55,28 @@ export const CostEstimator = ({ plugins }: CostEstimatorProps) => {
 
   if (plugins.length === 0) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-        <h2 className="mb-3 text-sm font-semibold text-zinc-100">
-          Top Plugins by Token Cost
-        </h2>
-        <p className="text-sm text-zinc-500">No active plugins.</p>
+      <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+        <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-5 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+          <h2 className="mb-3 text-sm font-semibold text-zinc-100">
+            Top Plugins by Token Cost
+          </h2>
+          <p className="text-sm text-zinc-400">No active plugins.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-      <h2 className="mb-4 text-sm font-semibold text-zinc-100">
-        Top Plugins by Token Cost
-      </h2>
-      <div className="flex flex-col gap-2.5">
-        {plugins.map((plugin) => (
-          <CostBar key={plugin.name} plugin={plugin} maxTokens={maxTokens} />
-        ))}
+    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-5 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+        <h2 className="mb-4 text-sm font-semibold text-zinc-100">
+          Top Plugins by Token Cost
+        </h2>
+        <div className="flex flex-col gap-2.5">
+          {plugins.map((plugin) => (
+            <CostBar key={plugin.name} plugin={plugin} maxTokens={maxTokens} />
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -28,14 +28,14 @@ export const HealthCard = ({ title, value, subtitle, level }: HealthCardProps) =
     <div className={`rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)] ${glowClass}`}>
       {/* Inner core */}
       <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-5 shadow-[inset_0_1px_1px_var(--glow-inset)]">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-400">
           {title}
         </p>
-        <p className={`mt-3 text-2xl font-bold tracking-tight ${valueColorClass}`}>
+        <p className={`mt-3 text-2xl font-bold tracking-tight tabular-nums ${valueColorClass}`}>
           {value}
         </p>
         {subtitle && (
-          <p className="mt-1.5 text-[11px] text-zinc-500">{subtitle}</p>
+          <p className="mt-1.5 text-[11px] text-zinc-400">{subtitle}</p>
         )}
       </div>
     </div>

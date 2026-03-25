@@ -55,14 +55,14 @@ export const ProjectSelector = ({
   }, [projectPath, projects]);
 
   return (
-    <div className="px-4 py-3 border-b border-zinc-800">
-      <label className="mb-1.5 block text-xs font-medium text-zinc-500">
+    <div className="px-4 py-3 border-b border-[var(--border-hairline)]">
+      <label className="mb-1.5 block text-xs font-medium text-zinc-400">
         Scope
       </label>
       <select
         value={projectPath ?? ""}
         onChange={handleChange}
-        className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-blue-500"
+        className="w-full rounded-md border border-[var(--border-accent)] bg-[var(--surface-raised)] px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-blue-500"
         title={selectedLabel ?? "Global settings"}
       >
         <option value="">Global</option>
@@ -71,7 +71,7 @@ export const ProjectSelector = ({
         ))}
       </select>
       {projectPath && (
-        <p className="mt-1 truncate text-[10px] text-zinc-600" title={projectPath}>
+        <p className="mt-1 truncate text-[10px] text-zinc-500" dir="rtl" title={projectPath}>
           {projectPath}
         </p>
       )}

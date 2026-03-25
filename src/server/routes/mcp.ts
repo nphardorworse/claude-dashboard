@@ -5,44 +5,12 @@ import { checkMcpHealth } from "../lib/mcp-health";
 import { withFileLock } from "../lib/file-lock";
 import { buildCatalog } from "../lib/catalog-builder";
 import { dirname } from "path";
-import type { McpServerHealth } from "../lib/mcp-health";
 import type { ClaudeJson, ProjectEntry } from "../lib/types";
 import type { McpOrigin, McpServerConfig } from "../../shared/types";
 
 type DashboardConfig = {
   pinnedMcpServers?: string[];
   [key: string]: unknown;
-};
-
-type McpServerInfo = {
-  name: string;
-  command: string;
-  args: string[];
-  env: Record<string, string>;
-  type: string;
-  status: McpServerHealth["status"];
-  source: "global" | "project-file" | "project-settings";
-};
-
-const buildServerList = (
-  servers: Record<string, McpServerConfig>,
-  healthResults: McpServerHealth[],
-  source: McpServerInfo["source"]
-): McpServerInfo[] => {
-  const healthMap = new Map<string, McpServerHealth["status"]>();
-  for (const h of healthResults) {
-    healthMap.set(h.name, h.status);
-  }
-
-  return Object.entries(servers).map(([name, config]) => ({
-    name,
-    command: config.command ?? config.url ?? "",
-    args: config.args ?? [],
-    env: config.env ?? {},
-    type: config.type ?? "stdio",
-    status: healthMap.get(name) ?? "unknown",
-    source,
-  }));
 };
 
 const mcp = new Hono();
@@ -53,57 +21,6 @@ mcp.get("/catalog", async (c) => {
     const projectPath = await getProjectPath(c);
     const catalog = await buildCatalog(projectPath ?? undefined);
     return c.json(catalog);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return c.json({ error: message }, 500);
-  }
-});
-
-// GET /servers — list all MCP servers with health status (backward compat)
-mcp.get("/servers", async (c) => {
-  try {
-    const projectPath = await getProjectPath(c);
-    const healthResults = await checkMcpHealth();
-
-    if (!projectPath) {
-      const data = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
-      const mcpServers = data?.mcpServers ?? {};
-      const configServers = buildServerList(mcpServers, healthResults, "global");
-
-      const configNames = new Set(Object.keys(mcpServers));
-      const extraServers = healthResults
-        .filter((h) => !configNames.has(h.name))
-        .map((h) => ({
-          name: h.name,
-          command: h.command,
-          args: [] as string[],
-          env: {} as Record<string, string>,
-          type: "stdio",
-          status: h.status,
-          source: "global" as const,
-        }));
-
-      const servers = [...configServers, ...extraServers];
-      const connectedCount = servers.filter((s) => s.status === "connected").length;
-      return c.json({ servers, connectedCount, scope: "global" });
-    }
-
-    const mcpJsonPath = getMcpJsonPath(projectPath);
-    const mcpJsonData = await readJsonFile<ClaudeJson>(mcpJsonPath);
-    const fileServers = mcpJsonData?.mcpServers ?? {};
-
-    const claudeJson = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
-    const settingsServers = claudeJson?.projects?.[projectPath]?.mcpServers ?? {};
-
-    const fromFile = buildServerList(fileServers, healthResults, "project-file");
-    const fromSettings = buildServerList(settingsServers, healthResults, "project-settings");
-
-    const seen = new Set(fromFile.map((s) => s.name));
-    const merged = [...fromFile, ...fromSettings.filter((s) => !seen.has(s.name))];
-
-    const connectedCount = merged.filter((s) => s.status === "connected").length;
-
-    return c.json({ servers: merged, connectedCount, scope: "project" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);

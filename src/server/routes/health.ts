@@ -128,7 +128,7 @@ const health = new Hono();
 
 health.get("/", async (c) => {
   try {
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = projectPath
       ? getSettingsPath(projectPath)
       : PATHS.globalSettings;

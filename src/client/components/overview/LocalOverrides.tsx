@@ -30,11 +30,11 @@ const PermissionItem = ({ permission, onRemove }: PermissionItemProps) => {
   const handleRemove = useCallback(() => onRemove(permission), [onRemove, permission]);
 
   return (
-    <div className="flex items-center justify-between rounded-md border border-zinc-700/50 bg-zinc-800/50 px-3 py-1.5">
+    <div className="flex items-center justify-between rounded-md border border-[var(--border-hairline)] bg-[var(--overlay-subtle)] px-3 py-1.5">
       <span className="font-mono text-xs text-zinc-300">{permission}</span>
       <button
         onClick={handleRemove}
-        className="shrink-0 rounded p-0.5 text-zinc-500 transition-colors hover:bg-zinc-700 hover:text-red-400"
+        className="shrink-0 rounded p-0.5 text-zinc-500 transition-colors hover:bg-[var(--overlay-medium)] hover:text-red-400"
         title="Remove"
       >
         <span className="text-xs">&times;</span>
@@ -110,7 +110,8 @@ export const LocalOverrides = () => {
   if (isLoading) return null;
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+    <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold text-zinc-100">
@@ -138,7 +139,7 @@ export const LocalOverrides = () => {
             <PermissionItem key={perm} permission={perm} onRemove={handleRemove} />
           ))}
           {editedPermissions.length === 0 && (
-            <p className="py-1 text-xs text-zinc-600">No permissions configured</p>
+            <p className="py-1 text-xs text-zinc-500">No permissions configured</p>
           )}
         </div>
 
@@ -149,17 +150,18 @@ export const LocalOverrides = () => {
             onChange={handleNewPermChange}
             onKeyDown={handleKeyDown}
             placeholder="e.g. Bash(npm run *)"
-            className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 font-mono text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-blue-500"
+            className="flex-1 rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-1.5 font-mono text-xs text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-blue-500"
           />
           <button
             onClick={handleAdd}
             disabled={!newPerm.trim()}
-            className="shrink-0 rounded-md bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="shrink-0 rounded-md bg-[var(--overlay-medium)] px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-[var(--overlay-medium)] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Add
           </button>
         </div>
       </div>
+    </div>
     </div>
   );
 };

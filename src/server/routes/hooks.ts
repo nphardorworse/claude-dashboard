@@ -66,7 +66,7 @@ const hooks = new Hono();
 // GET / — read all hooks from settings.json
 hooks.get("/", async (c) => {
   try {
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
     const { hooks: hooksMap } = await readHooks(settingsPath);
 
@@ -103,7 +103,7 @@ hooks.put("/", async (c) => {
       );
     }
 
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
 
     if (projectPath) {
@@ -133,7 +133,7 @@ hooks.delete("/:event", async (c) => {
   try {
     const event = c.req.param("event");
 
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
 
     if (projectPath) {
@@ -176,7 +176,7 @@ hooks.post("/add", async (c) => {
       );
     }
 
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
 
     if (projectPath) {

@@ -17,6 +17,91 @@ const analysisCache = new Map<
   { result: SessionAnalysis; timestamp: number }
 >();
 
+type WindowedUsage = { messages: number; inputTokens: number; outputTokens: number };
+
+/**
+ * Scan a session's JSONL and sum usage for entries after the cutoff.
+ *
+ * `messages` = user turns (prompts) after the cutoff. Tool-result entries
+ * are excluded — only real user prompts count, matching what Anthropic
+ * tracks in /usage.
+ *
+ * Token totals come from ALL assistant entries after the cutoff.
+ */
+export const sumUsageAfterCutoff = async (
+  sessionId: string,
+  projectPath: string,
+  cutoffMs: number,
+): Promise<WindowedUsage> => {
+  const filePath = findSessionJsonlPath(sessionId, projectPath);
+  if (!filePath) return { messages: 0, inputTokens: 0, outputTokens: 0 };
+
+  let raw: string;
+  try {
+    raw = await readFile(filePath, "utf-8");
+  } catch {
+    return { messages: 0, inputTokens: 0, outputTokens: 0 };
+  }
+
+  let messages = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    let entry: {
+      type?: string;
+      timestamp?: string;
+      message?: {
+        content?: unknown;
+        usage?: UsageBlock;
+      };
+    };
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+
+    const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : 0;
+    if (ts < cutoffMs) continue;
+
+    if (entry.type === "user") {
+      // Skip tool_result entries — only count real user prompts
+      if (!isToolResultContent(entry.message?.content)) {
+        messages += 1;
+      }
+      continue;
+    }
+
+    if (entry.type === "assistant") {
+      const usage = entry.message?.usage;
+      if (!usage) continue;
+
+      inputTokens +=
+        (usage.input_tokens ?? 0) +
+        (usage.cache_creation_input_tokens ?? 0) +
+        (usage.cache_read_input_tokens ?? 0);
+      outputTokens += usage.output_tokens ?? 0;
+    }
+  }
+
+  return { messages, inputTokens, outputTokens };
+};
+
+/** Check if a user entry's content is purely tool_result blocks (not a real prompt). */
+const isToolResultContent = (content: unknown): boolean => {
+  if (!Array.isArray(content)) return false;
+  return content.length > 0 && content.every(
+    (block: unknown) =>
+      typeof block === "object" &&
+      block !== null &&
+      (block as { type?: string }).type === "tool_result"
+  );
+};
+
 const projectKeyFromPath = (projectPath: string): string => {
   return projectPath.split("/").join("-");
 };

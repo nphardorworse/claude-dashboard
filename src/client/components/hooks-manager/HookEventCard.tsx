@@ -38,10 +38,10 @@ const HookCommandRow = ({
   }, [onRemove, entryIndex, hookIndex]);
 
   return (
-    <div className="flex items-start justify-between gap-3 rounded-md border border-zinc-700/50 bg-zinc-800/50 px-3 py-2">
+    <div className="flex items-start justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[var(--overlay-subtle)] px-3 py-2">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="shrink-0 rounded bg-zinc-700 px-1.5 py-0.5 font-mono text-xs text-zinc-300">
+          <span className="shrink-0 rounded bg-[var(--overlay-medium)] px-1.5 py-0.5 font-mono text-xs text-zinc-300">
             {matcher}
           </span>
           {hook.timeout != null && (
@@ -56,7 +56,7 @@ const HookCommandRow = ({
       </div>
       <button
         onClick={handleRemove}
-        className="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-700 hover:text-red-400"
+        className="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:bg-[var(--overlay-medium)] hover:text-red-400"
         title="Remove this hook"
       >
         <span className="text-xs">&times;</span>
@@ -93,8 +93,9 @@ export const HookEventCard = ({
   const hasHooks = allHooks.length > 0;
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <div className="flex items-center justify-between">
+    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+        <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-100">{event}</h3>
         {hasHooks && (
           <button
@@ -121,6 +122,7 @@ export const HookEventCard = ({
         ) : (
           <EmptyState />
         )}
+      </div>
       </div>
     </div>
   );

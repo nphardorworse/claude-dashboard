@@ -125,12 +125,12 @@ const ColumnBar = ({ comp, maxTotal }: ColumnBarProps) => {
           ))}
         </div>
       </div>
-      <span className="text-[8px] tabular-nums text-zinc-600">
+      <span className="text-[8px] tabular-nums text-zinc-500">
         {comp.turnIndex + 1}
       </span>
 
       {/* Hover tooltip */}
-      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-lg bg-zinc-800 px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover/col:opacity-100">
+      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-lg bg-[var(--overlay-medium)] px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover/col:opacity-100">
         {comp.userPrompt && (
           <p className="mb-1 max-w-[240px] truncate text-[10px] font-medium text-zinc-200">
             {comp.userPrompt}
@@ -186,7 +186,7 @@ export const ContextCompositionChart = ({
       {systemPromptEstimate > 0 && (
         <p className="mb-2 text-[10px] text-zinc-500">
           Base system prompt: ~{formatTokens(systemPromptEstimate)} tokens
-          <span className="text-zinc-600"> (CLAUDE.md + plugins + MCP tools)</span>
+          <span className="text-zinc-500"> (CLAUDE.md + plugins + MCP tools)</span>
         </p>
       )}
 

@@ -57,7 +57,7 @@ const profiles = new Hono();
 // GET / — list all profiles with active detection
 profiles.get("/", async (c) => {
   try {
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
 
     await ensureDir(PATHS.profilesDir);
@@ -114,7 +114,7 @@ profiles.get("/", async (c) => {
 // POST /switch — activate a profile (global or project-scoped)
 profiles.post("/switch", async (c) => {
   try {
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
     const { profileName } = await c.req.json<{ profileName: string }>();
     if (!validateProfileName(profileName)) {
@@ -189,7 +189,7 @@ profiles.post("/", async (c) => {
 // POST /save-current — snapshot current settings as a profile
 profiles.post("/save-current", async (c) => {
   try {
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
     const { name, description } = await c.req.json<{
       name: string;

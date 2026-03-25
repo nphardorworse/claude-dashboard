@@ -52,14 +52,16 @@ export const WarningsList = ({ warnings }: WarningsListProps) => {
   }
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-      <h2 className="mb-3 text-sm font-semibold text-zinc-100">
-        Notices & Warnings
-      </h2>
-      <div className="divide-y divide-zinc-800">
-        {warnings.map((warning, index) => (
-          <WarningItem key={`${warning.category}-${index}`} warning={warning} />
-        ))}
+    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-5 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+        <h2 className="mb-3 text-sm font-semibold text-zinc-100">
+          Notices & Warnings
+        </h2>
+        <div className="divide-y divide-[var(--border-hairline)]">
+          {warnings.map((warning, index) => (
+            <WarningItem key={`${warning.category}-${index}`} warning={warning} />
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -93,9 +93,10 @@ export const AddHookForm = ({
   );
 
   return (
+    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
     <form
       onSubmit={handleSubmit}
-      className="rounded-lg border border-zinc-800 bg-zinc-900 p-4"
+      className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]"
     >
       <h3 className="mb-3 text-sm font-semibold text-zinc-100">
         Add New Hook
@@ -108,7 +109,7 @@ export const AddHookForm = ({
             <select
               value={event}
               onChange={handleEventChange}
-              className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-blue-500"
+              className="w-full rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-blue-500"
             >
               {availableEvents.map((evt) => (
                 <option key={evt} value={evt}>
@@ -127,7 +128,7 @@ export const AddHookForm = ({
               value={matcher}
               onChange={handleMatcherChange}
               placeholder="*"
-              className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-blue-500"
+              className="w-full rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-blue-500"
             />
           </div>
         </div>
@@ -142,7 +143,7 @@ export const AddHookForm = ({
               value={command}
               onChange={handleCommandChange}
               placeholder="/path/to/script.sh"
-              className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 font-mono text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-blue-500"
+              className="w-full rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-1.5 font-mono text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-blue-500"
             />
           </div>
 
@@ -155,7 +156,7 @@ export const AddHookForm = ({
               value={timeoutStr}
               onChange={handleTimeoutChange}
               placeholder="optional"
-              className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-blue-500"
+              className="w-full rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-blue-500"
             />
           </div>
         </div>
@@ -180,5 +181,6 @@ export const AddHookForm = ({
         </div>
       </div>
     </form>
+    </div>
   );
 };

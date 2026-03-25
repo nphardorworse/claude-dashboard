@@ -45,10 +45,10 @@ const ProjectRow = ({ project }: ProjectRowProps) => {
   );
 
   return (
-    <tr className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+    <tr className="border-b border-[var(--border-hairline)] hover:bg-[var(--overlay-faint)]">
       <td className="px-3 py-2.5">
         <span className="text-sm font-medium text-zinc-200">{project.name}</span>
-        <span className="ml-2 font-mono text-xs text-zinc-600" title={project.path}>
+        <span className="ml-2 font-mono text-xs text-zinc-500" title={project.path}>
           {project.path.replace(/^\/Users\/[^/]+\//, "~/")}
         </span>
       </td>
@@ -105,7 +105,8 @@ export const ProjectCostTable = () => {
   if (sorted.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+    <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-100">
           Cost by Project
@@ -121,7 +122,7 @@ export const ProjectCostTable = () => {
       <div className="mt-3 overflow-x-auto">
         <table className="w-full text-left">
           <thead>
-            <tr className="border-b border-zinc-700">
+            <tr className="border-b border-[var(--border-accent)]">
               <th className="px-3 py-2 text-xs font-medium text-zinc-500">
                 Project
               </th>
@@ -146,6 +147,7 @@ export const ProjectCostTable = () => {
           </tbody>
         </table>
       </div>
+    </div>
     </div>
   );
 };

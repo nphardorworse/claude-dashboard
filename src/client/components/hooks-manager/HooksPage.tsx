@@ -96,14 +96,16 @@ const SummaryBar = ({
   totalHookCount: number;
 }) => {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3">
-      <p className="text-sm text-zinc-300">
-        <span className="font-semibold text-zinc-100">{activeEventCount}</span>
-        {" events active"}
-        <span className="mx-2 text-zinc-600">|</span>
-        <span className="font-semibold text-zinc-100">{totalHookCount}</span>
-        {" total hooks"}
-      </p>
+    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] px-4 py-3 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+        <p className="text-sm text-zinc-300">
+          <span className="font-semibold text-zinc-100">{activeEventCount}</span>
+          {" events active"}
+          <span className="mx-2 text-zinc-500">|</span>
+          <span className="font-semibold text-zinc-100">{totalHookCount}</span>
+          {" total hooks"}
+        </p>
+      </div>
     </div>
   );
 };
@@ -137,7 +139,7 @@ const InactiveEventsSection = ({
   if (events.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-zinc-800/50 bg-zinc-900/50">
+    <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--overlay-faint)]">
       <button
         onClick={onToggle}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
@@ -145,17 +147,17 @@ const InactiveEventsSection = ({
         <span className="text-xs font-medium text-zinc-500">
           {events.length} available events without hooks
         </span>
-        <span className="text-xs text-zinc-600">
+        <span className="text-xs text-zinc-500">
           {isExpanded ? "Hide" : "Show"}
         </span>
       </button>
 
       {isExpanded && (
-        <div className="flex flex-wrap gap-2 border-t border-zinc-800/50 px-4 py-3">
+        <div className="flex flex-wrap gap-2 border-t border-[var(--border-hairline)] px-4 py-3">
           {events.map((event) => (
             <span
               key={event}
-              className="rounded bg-zinc-800/50 px-2 py-1 text-xs text-zinc-500"
+              className="rounded bg-[var(--overlay-subtle)] px-2 py-1 text-xs text-zinc-500"
             >
               {event}
             </span>
@@ -308,7 +310,7 @@ export const HooksPage = ({ projectPath = null, onClearProject }: HooksPageProps
               {!isFormOpen && (
                 <button
                   onClick={handleOpenForm}
-                  className="ml-4 shrink-0 rounded-lg bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-700"
+                  className="ml-4 shrink-0 rounded-lg bg-[var(--overlay-medium)] px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-[var(--overlay-medium)]"
                 >
                   Add Hook
                 </button>
@@ -338,13 +340,15 @@ export const HooksPage = ({ projectPath = null, onClearProject }: HooksPageProps
             </div>
 
             {activeEvents.length === 0 && !isFormOpen && (
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-8 text-center">
-                <p className="text-sm text-zinc-500">
-                  No hooks configured yet.
-                </p>
-                <p className="mt-1 text-xs text-zinc-600">
-                  Click "Add Hook" to get started.
-                </p>
+              <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+                <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] px-4 py-8 text-center shadow-[inset_0_1px_1px_var(--glow-inset)]">
+                  <p className="text-sm text-zinc-500">
+                    No hooks configured yet.
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Click "Add Hook" to get started.
+                  </p>
+                </div>
               </div>
             )}
 

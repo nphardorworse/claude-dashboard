@@ -198,7 +198,7 @@ type ToolBadgeProps = {
 };
 
 const ToolBadge = ({ name, count }: ToolBadgeProps) => (
-  <span className="inline-flex items-center gap-0.5 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+  <span className="inline-flex items-center gap-0.5 rounded bg-[var(--overlay-medium)] px-1.5 py-0.5 text-[10px] text-zinc-400">
     {name}: {count}
   </span>
 );
@@ -216,7 +216,7 @@ const ToolBadgeList = ({ toolCounts }: ToolBadgeListProps) => {
     [toolCounts]
   );
 
-  if (sorted.length === 0) return <span className="text-zinc-600">-</span>;
+  if (sorted.length === 0) return <span className="text-zinc-500">-</span>;
 
   return (
     <div className="flex flex-wrap gap-1">
@@ -299,11 +299,11 @@ const FilterBar = ({
       value={searchQuery}
       onChange={(e) => onSearchChange(e.target.value)}
       placeholder="Search prompts..."
-      className="w-48 rounded-lg border-0 bg-[var(--overlay-subtle)] px-3 py-1.5 text-xs text-zinc-200 outline-none ring-1 ring-[var(--border-hairline)] placeholder:text-zinc-600 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] focus:ring-blue-500/40 focus:bg-[var(--overlay-medium)]"
+      className="w-48 rounded-lg border-0 bg-[var(--overlay-subtle)] px-3 py-1.5 text-xs text-zinc-200 outline-none ring-1 ring-[var(--border-hairline)] placeholder:text-zinc-500 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] focus:ring-blue-500/40 focus:bg-[var(--overlay-medium)]"
     />
     <SegmentedControl options={DATE_RANGE_OPTIONS} active={dateRange} onChange={onDateRangeChange} />
     <div className="ml-auto flex items-center gap-2">
-      <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-600">
+      <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-500">
         Group
       </span>
       <SegmentedControl options={GROUP_OPTIONS} active={groupBy} onChange={onGroupByChange} />
@@ -346,7 +346,7 @@ const ActivityChart = ({ groups, groupBy }: ActivityChartProps) => {
   return (
     <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
       <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] px-5 py-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-600">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
           Activity Overview
         </p>
         <div className="mt-3 flex items-end gap-[3px]" style={{ height: 72 }}>
@@ -377,12 +377,12 @@ const ActivityChart = ({ groups, groupBy }: ActivityChartProps) => {
                     />
                   </div>
                 </div>
-                <span className="text-[8px] tabular-nums text-zinc-600">
+                <span className="text-[8px] tabular-nums text-zinc-500">
                   {formatBarLabel(g.key)}
                 </span>
 
                 {/* Hover tooltip */}
-                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-lg bg-zinc-800 px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover:opacity-100">
+                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-lg bg-[var(--overlay-medium)] px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover:opacity-100">
                   <p className="whitespace-nowrap text-[10px] font-semibold text-zinc-200">
                     {g.label}
                   </p>
@@ -397,11 +397,11 @@ const ActivityChart = ({ groups, groupBy }: ActivityChartProps) => {
           })}
         </div>
         <div className="mt-2 flex items-center gap-4">
-          <span className="flex items-center gap-1.5 text-[9px] text-zinc-600">
+          <span className="flex items-center gap-1.5 text-[9px] text-zinc-500">
             <span className="inline-block h-2 w-2 rounded-sm bg-blue-500/50" />
             Input
           </span>
-          <span className="flex items-center gap-1.5 text-[9px] text-zinc-600">
+          <span className="flex items-center gap-1.5 text-[9px] text-zinc-500">
             <span className="inline-block h-2 w-2 rounded-sm bg-indigo-400/40" />
             Output
           </span>
@@ -510,8 +510,8 @@ const SessionRow = ({
   return (
     <>
       <tr
-        className={`cursor-pointer border-b border-zinc-800/50 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:bg-zinc-800/30 ${
-          isExpanded ? "bg-zinc-800/40" : ""
+        className={`cursor-pointer border-b border-[var(--border-hairline)] transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:bg-[var(--overlay-faint)] ${
+          isExpanded ? "bg-[var(--overlay-subtle)]" : ""
         }`}
         onClick={onToggle}
         title="Click to analyze"
@@ -550,20 +550,20 @@ const SessionRow = ({
             <span className="text-green-400">+{session.linesAdded}</span>
           )}
           {session.linesAdded > 0 && session.linesRemoved > 0 && (
-            <span className="text-zinc-600">/</span>
+            <span className="text-zinc-500">/</span>
           )}
           {session.linesRemoved > 0 && (
             <span className="text-red-400">-{session.linesRemoved}</span>
           )}
           {session.linesAdded === 0 && session.linesRemoved === 0 && (
-            <span className="text-zinc-600">-</span>
+            <span className="text-zinc-500">-</span>
           )}
         </td>
         <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs">
           {session.toolErrors > 0 ? (
             <span className="text-red-400">{session.toolErrors}</span>
           ) : (
-            <span className="text-zinc-600">0</span>
+            <span className="text-zinc-500">0</span>
           )}
         </td>
       </tr>
@@ -600,18 +600,18 @@ const SummaryBar = ({
       <span>
         <span className="font-medium text-zinc-200">{filteredSessions}</span>
         {isFiltered && (
-          <span className="text-zinc-600"> of {totalSessions}</span>
+          <span className="text-zinc-500"> of {totalSessions}</span>
         )}{" "}
         sessions
       </span>
-      <span className="text-zinc-700">|</span>
+      <span className="text-zinc-500">|</span>
       <span>
         <span className="font-medium text-zinc-200">
           {formatTokens(totalTokens)}
         </span>{" "}
         tokens
       </span>
-      <span className="text-zinc-700">|</span>
+      <span className="text-zinc-500">|</span>
       <span>
         <span className="font-medium text-zinc-200">{totalCommits}</span>{" "}
         commits
@@ -630,7 +630,7 @@ type TableHeaderProps = {
 
 const TableHeader = ({ sortField, sortDirection, onSort }: TableHeaderProps) => (
   <thead>
-    <tr className="border-b border-zinc-700">
+    <tr className="border-b border-[var(--border-accent)]">
       <SortableHeader
         label="Date"
         field="date"
@@ -809,7 +809,8 @@ export const SessionHistory = ({
 
   if (sessions.length === 0) {
     return (
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+      <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
         <h3 className="text-sm font-semibold text-zinc-100">
           Session History
         </h3>
@@ -817,11 +818,13 @@ export const SessionHistory = ({
           No sessions found for this project.
         </p>
       </div>
+      </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+    <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-100">
           Session History
@@ -893,6 +896,7 @@ export const SessionHistory = ({
           </table>
         </div>
       )}
+    </div>
     </div>
   );
 };

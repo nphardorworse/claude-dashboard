@@ -16,17 +16,26 @@
   --overlay-medium: rgba(255, 255, 255, 0.08);
 
   /* Borders */
-  --border-hairline: rgba(255, 255, 255, 0.06);
-  --border-accent: rgba(255, 255, 255, 0.10);
+  --border-hairline: rgba(255, 255, 255, 0.08);
+  --border-accent: rgba(255, 255, 255, 0.14);
 
   /* Glows */
   --glow-inset: rgba(255, 255, 255, 0.04);
   --glow-inset-strong: rgba(255, 255, 255, 0.2);
 
+  /* Status / accent glows */
+  --glow-blue: rgba(59, 130, 246, 0.3);
+  --glow-blue-nav: rgba(96, 165, 250, 0.5);
+  --glow-emerald: rgba(52, 211, 153, 0.5);
+  --glow-amber: rgba(251, 191, 36, 0.4);
+  --glow-red: rgba(248, 113, 113, 0.4);
+  --glow-knob: rgba(0, 0, 0, 0.3);
+  --glow-track-off: rgba(0, 0, 0, 0.4);
+
   /* Gradient mesh */
-  --gradient-green: rgba(16, 185, 129, 0.15);
-  --gradient-blue: rgba(59, 130, 246, 0.10);
-  --gradient-violet: rgba(139, 92, 246, 0.12);
+  --gradient-a: rgba(56, 110, 220, 0.12);
+  --gradient-b: rgba(100, 80, 200, 0.10);
+  --gradient-c: rgba(140, 70, 180, 0.08);
 
   /* Misc */
   --grain-opacity: 0.025;
@@ -60,21 +69,57 @@
   --overlay-medium: rgba(0, 0, 0, 0.06);
 
   /* Borders */
-  --border-hairline: rgba(0, 0, 0, 0.08);
-  --border-accent: rgba(0, 0, 0, 0.12);
+  --border-hairline: rgba(0, 0, 0, 0.10);
+  --border-accent: rgba(0, 0, 0, 0.16);
 
   /* Glows */
   --glow-inset: rgba(0, 0, 0, 0.03);
   --glow-inset-strong: rgba(0, 0, 0, 0.1);
 
   /* Gradient mesh — same hues, lighter */
-  --gradient-green: rgba(16, 185, 129, 0.07);
-  --gradient-blue: rgba(59, 130, 246, 0.06);
-  --gradient-violet: rgba(139, 92, 246, 0.07);
+  --gradient-a: rgba(56, 110, 220, 0.06);
+  --gradient-b: rgba(100, 80, 200, 0.05);
+  --gradient-c: rgba(140, 70, 180, 0.04);
 
   --grain-opacity: 0.015;
   --scrollbar-thumb: rgba(0, 0, 0, 0.12);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.20);
+
+  /* Accent colors — darken pastel shades for WCAG AA on white backgrounds
+     Dark-mode 300/400 shades are ~2-3:1 on white; these 700 equivalents give ≥4.5:1 */
+  --color-blue-300: #1d4ed8;
+  --color-blue-400: #1d4ed8;
+  --color-blue-500: #2563eb;
+  --color-blue-600: #1d4ed8;
+  --color-emerald-300: #047857;
+  --color-emerald-400: #047857;
+  --color-emerald-500: #059669;
+  --color-amber-400: #b45309;
+  --color-amber-500: #d97706;
+  --color-red-300: #b91c1c;
+  --color-red-400: #b91c1c;
+  --color-red-500: #dc2626;
+  --color-red-600: #b91c1c;
+  --color-yellow-300: #a16207;
+  --color-yellow-400: #a16207;
+  --color-green-400: #15803d;
+  --color-green-500: #15803d;
+  --color-sky-400: #0369a1;
+  --color-violet-400: #6d28d9;
+  --color-indigo-400: #4f46e5;
+  --color-indigo-500: #4338ca;
+  --color-purple-500: #7e22ce;
+  --color-rose-400: #e11d48;
+  --color-rose-500: #be123c;
+
+  /* Status / accent glows — subtler on light backgrounds */
+  --glow-blue: rgba(37, 99, 235, 0.2);
+  --glow-blue-nav: rgba(37, 99, 235, 0.35);
+  --glow-emerald: rgba(5, 150, 105, 0.3);
+  --glow-amber: rgba(217, 119, 6, 0.25);
+  --glow-red: rgba(220, 38, 38, 0.25);
+  --glow-knob: rgba(0, 0, 0, 0.15);
+  --glow-track-off: rgba(0, 0, 0, 0.15);
 }
 
 /* ─── Tailwind theme extensions ─────────────────── */
@@ -93,6 +138,8 @@
 body {
   background: var(--surface-base);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Gradient mesh overlay */
@@ -101,9 +148,9 @@ body {
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(ellipse 70% 50% at 0% 100%, var(--gradient-green), transparent 60%),
-    radial-gradient(ellipse 50% 40% at 50% 20%, var(--gradient-blue), transparent 60%),
-    radial-gradient(ellipse 60% 50% at 100% 0%, var(--gradient-violet), transparent 60%);
+    radial-gradient(ellipse 80% 60% at 10% 90%, var(--gradient-a), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 50% 10%, var(--gradient-b), transparent 65%),
+    radial-gradient(ellipse 70% 60% at 90% 80%, var(--gradient-c), transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -159,9 +206,13 @@ body {
 /* ─── Premium transitions ──────────────────────── */
 
 .transition-premium {
-  transition: all 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+  transition-property: color, background-color, border-color, opacity, box-shadow, transform, scale;
+  transition-duration: 0.5s;
+  transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .transition-snappy {
-  transition: all 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  transition-property: color, background-color, border-color, opacity, box-shadow, transform, scale;
+  transition-duration: 0.3s;
+  transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
 }

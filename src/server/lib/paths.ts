@@ -1,7 +1,7 @@
 import { homedir } from "os";
 import { join, resolve } from "path";
 import type { Context } from "hono";
-import { readFileSync } from "fs";
+import { readFile } from "fs/promises";
 
 const CLAUDE_DIR = join(homedir(), ".claude");
 
@@ -10,13 +10,13 @@ let knownProjectsCache: Set<string> | null = null;
 let knownProjectsCacheTime = 0;
 const KNOWN_PROJECTS_TTL_MS = 30_000;
 
-const loadKnownProjects = (): Set<string> => {
+export const loadKnownProjects = async (): Promise<Set<string>> => {
   const now = Date.now();
   if (knownProjectsCache && now - knownProjectsCacheTime < KNOWN_PROJECTS_TTL_MS) {
     return knownProjectsCache;
   }
   try {
-    const raw = readFileSync(join(homedir(), ".claude.json"), "utf-8");
+    const raw = await readFile(join(homedir(), ".claude.json"), "utf-8");
     const data = JSON.parse(raw);
     const projects = data.projects ?? {};
     knownProjectsCache = new Set(Object.keys(projects));
@@ -27,13 +27,13 @@ const loadKnownProjects = (): Set<string> => {
   }
 };
 
-const validateProjectPath = (decoded: string): string | undefined => {
+const validateProjectPath = async (decoded: string): Promise<string | undefined> => {
   // Must be absolute
   if (!decoded.startsWith("/")) return undefined;
   // Resolve to catch .. traversal
   const resolved = resolve(decoded);
   // Must be in the known projects allowlist
-  const known = loadKnownProjects();
+  const known = await loadKnownProjects();
   if (!known.has(resolved)) return undefined;
   return resolved;
 };
@@ -53,7 +53,7 @@ export const PATHS = {
   agentSkillsDir: join(homedir(), ".agents", "skills"),
 };
 
-export const getProjectPath = (c: Context): string | undefined => {
+export const getProjectPath = async (c: Context): Promise<string | undefined> => {
   const encoded = c.req.query("project");
   if (!encoded) return undefined;
   const decoded = Buffer.from(encoded, "base64").toString("utf-8");

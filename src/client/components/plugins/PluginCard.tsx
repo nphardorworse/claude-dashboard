@@ -69,7 +69,7 @@ export const PluginCard = ({ plugin, onToggle, isToggling }: PluginCardProps) =>
           </div>
 
           {plugin.description && (
-            <p className="mt-1.5 truncate text-[11px] text-zinc-500">
+            <p className="mt-1.5 truncate text-[11px] text-zinc-400">
               {plugin.description}
             </p>
           )}
@@ -88,7 +88,7 @@ export const PluginCard = ({ plugin, onToggle, isToggling }: PluginCardProps) =>
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                 plugin.enableSource === "project"
                   ? "bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20"
-                  : "text-zinc-600"
+                  : "text-zinc-500"
               }`}>
                 {SOURCE_LABELS[plugin.enableSource]}
               </span>

@@ -76,9 +76,9 @@ const ExpensiveSessionRow = ({ session, rank, onClick }: ExpensiveSessionRowProp
   <button
     type="button"
     onClick={onClick}
-    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-snappy hover:bg-zinc-800/50"
+    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-snappy hover:bg-[var(--overlay-subtle)]"
   >
-    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-semibold text-zinc-400">
+    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--overlay-medium)] text-[10px] font-semibold text-zinc-400">
       {rank}
     </span>
     <div className="min-w-0 flex-1">
@@ -133,12 +133,14 @@ export const ProjectAnalytics = ({ projectPath, onSessionClick }: ProjectAnalyti
 
   if (isLoading) {
     return (
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+      <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
         <h3 className="text-sm font-semibold text-zinc-100">Cost Analytics</h3>
         <div className="mt-3 flex items-center gap-2">
-          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-600 border-t-indigo-500" />
+          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--border-hairline)] border-t-indigo-500" />
           <span className="text-xs text-zinc-400">Analyzing sessions...</span>
         </div>
+      </div>
       </div>
     );
   }
@@ -148,7 +150,8 @@ export const ProjectAnalytics = ({ projectPath, onSessionClick }: ProjectAnalyti
   }
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+    <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
       <h3 className="text-sm font-semibold text-zinc-100">Cost Analytics</h3>
       <p className="mt-1 text-xs text-zinc-500">
         Aggregated from the 20 most recent sessions with JSONL data
@@ -196,6 +199,7 @@ export const ProjectAnalytics = ({ projectPath, onSessionClick }: ProjectAnalyti
           <InsightCards insights={data.insights} />
         </div>
       )}
+    </div>
     </div>
   );
 };

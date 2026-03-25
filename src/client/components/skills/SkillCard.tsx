@@ -66,8 +66,8 @@ export const SkillCard = ({ skill, onToggle, isToggling }: SkillCardProps) => {
           </div>
 
           {skill.description && (
-            <p className="mt-1.5 line-clamp-2 text-[11px] text-zinc-500">
-              <span className="text-zinc-600">Triggers when: </span>
+            <p className="mt-1.5 line-clamp-2 text-[11px] text-zinc-400">
+              <span className="text-zinc-500">Triggers when: </span>
               {skill.description}
             </p>
           )}
@@ -87,7 +87,7 @@ export const SkillCard = ({ skill, onToggle, isToggling }: SkillCardProps) => {
                 className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                   skill.enableSource === "project"
                     ? "bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20"
-                    : "text-zinc-600"
+                    : "text-zinc-500"
                 }`}
               >
                 {SOURCE_LABELS[skill.enableSource]}

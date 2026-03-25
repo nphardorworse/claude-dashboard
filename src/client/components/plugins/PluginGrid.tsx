@@ -10,8 +10,10 @@ type PluginGridProps = {
 export const PluginGrid = ({ plugins, onToggle, togglingIds }: PluginGridProps) => {
   if (plugins.length === 0) {
     return (
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-8 text-center">
-        <p className="text-sm text-zinc-400">No plugins found.</p>
+      <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+        <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-8 text-center shadow-[inset_0_1px_1px_var(--glow-inset)]">
+          <p className="text-sm text-zinc-400">No plugins found.</p>
+        </div>
       </div>
     );
   }

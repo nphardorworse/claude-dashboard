@@ -14,7 +14,7 @@ const skills = new Hono();
 
 skills.get("/", async (c) => {
   try {
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
 
     const skillList = await scanSkills(
@@ -52,7 +52,7 @@ skills.put("/toggle", async (c) => {
       );
     }
 
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
 
     if (projectPath) {

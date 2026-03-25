@@ -31,7 +31,7 @@ const analytics = new Hono();
 analytics.get("/session/:sessionId", async (c) => {
   try {
     const sessionId = c.req.param("sessionId");
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
 
     if (!projectPath) {
       return c.json({ error: "Missing ?project= query parameter" }, 400);
@@ -61,7 +61,7 @@ analytics.get("/session/:sessionId", async (c) => {
 
 analytics.get("/project", async (c) => {
   try {
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
 
     if (!projectPath) {
       return c.json({ error: "Missing ?project= query parameter" }, 400);

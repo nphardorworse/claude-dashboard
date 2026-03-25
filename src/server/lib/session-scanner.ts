@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from "fs/promises";
 import { join, basename } from "path";
-import { PATHS, getProjectSessionsDir } from "./paths";
+import { PATHS, getProjectSessionsDir, loadKnownProjects } from "./paths";
 import { readJsonFile } from "./file-io";
 
 export type SessionMeta = {
@@ -215,9 +215,15 @@ const parseJsonlForMeta = async (
     }
 
     if (entryType === "user") {
-      userMessages++;
-      if (!firstPrompt && entry.message?.content) {
-        firstPrompt = extractFirstUserText(entry.message.content);
+      // Only count real user prompts, not tool_result entries
+      const content = entry.message?.content;
+      const isToolResult = Array.isArray(content) && content.length > 0 &&
+        content.every((b) => typeof b === "object" && b !== null && (b as { type?: string }).type === "tool_result");
+      if (!isToolResult) {
+        userMessages++;
+        if (!firstPrompt && content) {
+          firstPrompt = extractFirstUserText(content);
+        }
       }
     }
 
@@ -363,8 +369,36 @@ const scanProjectJsonlSessions = async (
 
 // ─── Public API ────────────────────────────────────────────
 
+// Cache for the full scan (meta + JSONL across all projects)
+const ALL_SESSIONS_CACHE_TTL_MS = 15_000;
+let cachedAllSessions: SessionMeta[] | null = null;
+let allSessionsCacheTimestamp = 0;
+
 export const getAllSessions = async (): Promise<SessionMeta[]> => {
-  return loadMetaSessions();
+  const now = Date.now();
+  if (cachedAllSessions && now - allSessionsCacheTimestamp < ALL_SESSIONS_CACHE_TTL_MS) {
+    return cachedAllSessions;
+  }
+
+  // Start with pre-generated meta files
+  const metaSessions = await loadMetaSessions();
+  const metaIds = new Set(metaSessions.map((s) => s.sessionId));
+
+  // Scan JSONL files across all known projects for sessions missing from meta
+  const knownProjects = await loadKnownProjects();
+  const jsonlBatches = await Promise.all(
+    Array.from(knownProjects).map((projectPath) =>
+      scanProjectJsonlSessions(projectPath, metaIds)
+    )
+  );
+
+  const allJsonl = jsonlBatches.flat();
+  const merged = [...metaSessions, ...allJsonl];
+
+  cachedAllSessions = merged;
+  allSessionsCacheTimestamp = Date.now();
+
+  return merged;
 };
 
 export const getSessionsForProject = async (

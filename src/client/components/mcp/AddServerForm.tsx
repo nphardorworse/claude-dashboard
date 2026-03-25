@@ -39,7 +39,7 @@ const FormField = ({
         value={value}
         onChange={handleChange}
         placeholder={placeholder}
-        className={`w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-blue-500 ${isMonospace ? "font-mono" : ""}`}
+        className={`w-full rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-blue-500 ${isMonospace ? "font-mono" : ""}`}
       />
     </div>
   );
@@ -89,7 +89,7 @@ export const AddServerForm = ({ onSubmit, onCancel }: AddServerFormProps) => {
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-lg border border-zinc-800 bg-zinc-900 p-4"
+      className="rounded-lg border border-[var(--border-hairline)] bg-[var(--surface-raised)] p-4"
     >
       <h3 className="mb-3 text-sm font-semibold text-zinc-100">
         Add MCP Server

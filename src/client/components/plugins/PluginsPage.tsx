@@ -23,17 +23,19 @@ const SummaryBar = ({
   totalEstimatedTokens: number;
 }) => {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3">
-      <p className="text-sm text-zinc-300">
-        <span className="font-semibold text-zinc-100">{activeCount}</span>
-        {" of "}
-        <span className="font-semibold text-zinc-100">{totalCount}</span>
-        {" plugins active"}
-        <span className="mx-2 text-zinc-600">|</span>
-        <span className="text-zinc-400">
-          ~{formatTokenCount(totalEstimatedTokens)} tokens/turn
-        </span>
-      </p>
+    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
+      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] px-4 py-3 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+        <p className="text-sm text-zinc-300">
+          <span className="font-semibold text-zinc-100">{activeCount}</span>
+          {" of "}
+          <span className="font-semibold text-zinc-100">{totalCount}</span>
+          {" plugins active"}
+          <span className="mx-2 text-zinc-500">|</span>
+          <span className="text-zinc-400">
+            ~{formatTokenCount(totalEstimatedTokens)} tokens/turn
+          </span>
+        </p>
+      </div>
     </div>
   );
 };
@@ -53,14 +55,14 @@ const STATUS_OPTIONS: { value: StatusFilterOption; label: string }[] = [
 
 const StatusFilter = ({ active, onChange }: StatusFilterProps) => {
   return (
-    <div className="flex rounded-lg border border-zinc-700 bg-zinc-900">
+    <div className="flex rounded-lg border border-[var(--border-accent)] bg-[var(--surface-raised)]">
       {STATUS_OPTIONS.map((opt) => (
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
           className={`px-3 py-2 text-xs font-medium transition-colors ${
             active === opt.value
-              ? "bg-zinc-700 text-zinc-100"
+              ? "bg-[var(--overlay-medium)] text-zinc-100"
               : "text-zinc-400 hover:text-zinc-200"
           } ${opt.value === "all" ? "rounded-l-lg" : ""} ${opt.value === "inactive" ? "rounded-r-lg" : ""}`}
         >
@@ -186,7 +188,7 @@ export const PluginsPage = ({ projectPath = null, onClearProject }: PluginsPageP
 
   const categories = useMemo(() => {
     const marketplaces = new Set(plugins.map((p) => p.marketplace));
-    return Array.from(marketplaces).sort();
+    return Array.from(marketplaces).sort().map((m) => ({ value: m, label: m }));
   }, [plugins]);
 
   const filteredPlugins = useMemo(() => {
@@ -242,7 +244,7 @@ export const PluginsPage = ({ projectPath = null, onClearProject }: PluginsPageP
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search plugins..."
-                className="flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-blue-500"
+                className="flex-1 rounded-lg border border-[var(--border-accent)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-blue-500"
               />
               <StatusFilter active={statusFilter} onChange={setStatusFilter} />
             </div>

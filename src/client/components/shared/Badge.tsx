@@ -6,10 +6,10 @@ type BadgeProps = {
 };
 
 const VARIANT_CLASSES: Record<BadgeVariant, string> = {
-  low: "bg-emerald-500/10 text-emerald-400/90 ring-emerald-500/20",
-  medium: "bg-amber-500/10 text-amber-400/90 ring-amber-500/20",
-  high: "bg-red-500/10 text-red-400/90 ring-red-500/20",
-  info: "bg-[var(--overlay-subtle)] text-zinc-400 ring-[var(--border-hairline)]",
+  low: "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20",
+  medium: "bg-amber-500/10 text-amber-400 ring-amber-500/20",
+  high: "bg-red-500/10 text-red-400 ring-red-500/20",
+  info: "bg-[var(--overlay-subtle)] text-zinc-300 ring-[var(--border-accent)]",
 };
 
 export const Badge = ({ label, variant }: BadgeProps) => {

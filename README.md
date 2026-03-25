@@ -1,4 +1,4 @@
-# Claude Dashboard
+# Claude Code Dashboard
 
 A local web dashboard for managing Claude Code's settings, plugins, MCP servers, hooks, and profiles — per-project or globally.
 
@@ -21,6 +21,7 @@ Single command starts both the Hono API server and the Vite dev server with prox
 Claude Code loads plugins, MCP servers, hooks, and skills into every conversation turn. Each adds to the system prompt token count. With 39 plugins and 13 MCP servers enabled, a single planning agent was burning 40% of a Max subscription's daily tokens.
 
 This dashboard lets you:
+
 - See exactly what's loading and how many tokens each plugin costs
 - Toggle plugins/MCPs/hooks on/off per project
 - Switch between plugin profiles (mobile, science, web, core)
@@ -82,19 +83,19 @@ claude-dashboard/
 
 The dashboard reads and writes these Claude Code configuration files:
 
-| File | Scope | Read/Write | What It Controls |
-|------|-------|-----------|-----------------|
-| `~/.claude/settings.json` | Global | R/W | Plugins, hooks, permissions, effortLevel |
-| `~/.claude/settings.local.json` | Global local | R/W | Machine-specific permissions (gitignored) |
-| `~/.claude.json` | Global | R/W | MCP servers, per-project settings, usage stats |
-| `~/.claude/plugins/installed_plugins.json` | Global | R | Plugin metadata, install paths, versions |
-| `~/.claude/plugins/cache/*/` | Global | R | Plugin content for token cost estimation |
-| `~/.claude/profiles/*.json` | Global | R/W | Plugin group profiles |
-| `~/.claude/usage-data/session-meta/*.json` | Global | R | Per-session cost/token/tool data |
-| `~/.claude/dashboard-config.json` | Dashboard | R/W | MCP defaults for new projects |
-| `<project>/.claude/settings.json` | Project | R/W | Project-level plugin/hook overrides |
-| `<project>/.claude/settings.local.json` | Project local | R/W | Project permissions, MCP toggles |
-| `<project>/.mcp.json` | Project | R/W | Project-specific MCP servers |
+| File                                       | Scope         | Read/Write | What It Controls                               |
+| ------------------------------------------ | ------------- | ---------- | ---------------------------------------------- |
+| `~/.claude/settings.json`                  | Global        | R/W        | Plugins, hooks, permissions, effortLevel       |
+| `~/.claude/settings.local.json`            | Global local  | R/W        | Machine-specific permissions (gitignored)      |
+| `~/.claude.json`                           | Global        | R/W        | MCP servers, per-project settings, usage stats |
+| `~/.claude/plugins/installed_plugins.json` | Global        | R          | Plugin metadata, install paths, versions       |
+| `~/.claude/plugins/cache/*/`               | Global        | R          | Plugin content for token cost estimation       |
+| `~/.claude/profiles/*.json`                | Global        | R/W        | Plugin group profiles                          |
+| `~/.claude/usage-data/session-meta/*.json` | Global        | R          | Per-session cost/token/tool data               |
+| `~/.claude/dashboard-config.json`          | Dashboard     | R/W        | MCP defaults for new projects                  |
+| `<project>/.claude/settings.json`          | Project       | R/W        | Project-level plugin/hook overrides            |
+| `<project>/.claude/settings.local.json`    | Project local | R/W        | Project permissions, MCP toggles               |
+| `<project>/.mcp.json`                      | Project       | R/W        | Project-specific MCP servers                   |
 
 **Safety:** Every write operation creates a timestamped backup in `~/.claude/backups/` before modifying any file. Writes are atomic (write to `.tmp`, then rename).
 
@@ -161,6 +162,7 @@ Every page (except Overview global view) is scope-aware. A project selector drop
 - **Project** (project selected): reads/writes `<project>/.claude/settings.json` and `<project>/.mcp.json`
 
 The scope banner on each page shows which file will be modified, e.g.:
+
 ```
 Global — writes to ~/.claude/settings.json
 snack-move (project overrides) — writes to ~/Documents/.../snack-move/.claude/settings.json
@@ -195,11 +197,13 @@ tokens = ceil(total_bytes / 3.5)
 ```
 
 Thresholds:
+
 - **Low** (green): < 5,000 tokens per plugin
 - **Medium** (yellow): 5,000–50,000 tokens
 - **High** (red): > 50,000 tokens
 
 Overall budget:
+
 - **Low**: < 50,000 total tokens/turn
 - **Medium**: 50,000–150,000
 - **High**: > 150,000 (warning shown)
@@ -222,32 +226,32 @@ Alias configured in `~/.zshrc`. Profiles are stored as JSON files in `~/.claude/
 
 All endpoints are at `http://localhost:3847/api/`. Most accept an optional `?project=<base64-encoded-path>` query parameter to operate in project scope.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Aggregated health summary + warnings + top plugins by cost |
-| GET | `/plugins` | All plugins with metadata, token costs, enabled state |
-| PUT | `/plugins/toggle` | Toggle single plugin `{ pluginId, enabled }` |
-| PUT | `/plugins/bulk-toggle` | Toggle multiple plugins `{ pluginIds, enabled }` |
-| GET | `/mcp/servers` | All MCP servers with health + disabled list |
-| POST | `/mcp/servers` | Add server `{ name, command, args }` |
-| DELETE | `/mcp/servers/:name` | Remove server |
-| POST | `/mcp/health-check` | Refresh health status |
-| GET | `/hooks` | All hooks by event + available events |
-| PUT | `/hooks` | Update hooks for event `{ event, hooks }` |
-| DELETE | `/hooks/:event` | Remove all hooks for event |
-| POST | `/hooks/add` | Add single hook `{ event, matcher, command }` |
-| GET | `/profiles` | All profiles with active detection |
-| POST | `/profiles/switch` | Activate profile `{ profileName }` |
-| POST | `/profiles/save-current` | Snapshot current state `{ name, description }` |
-| GET | `/projects` | Discover projects with cost/session data |
-| GET | `/projects/:path/settings` | Read project config files |
-| GET | `/sessions` | Session history with token/tool breakdown |
-| GET | `/config/global-settings` | Read global settings.json |
-| GET | `/config/global-local` | Read global settings.local.json |
-| PUT | `/config/global-local/permissions` | Update global permissions |
-| GET | `/defaults` | Read MCP defaults config |
-| PUT | `/defaults/disabled-mcps` | Set default disabled MCPs |
-| POST | `/defaults/apply` | Apply defaults to a project |
+| Method | Endpoint                           | Description                                                |
+| ------ | ---------------------------------- | ---------------------------------------------------------- |
+| GET    | `/health`                          | Aggregated health summary + warnings + top plugins by cost |
+| GET    | `/plugins`                         | All plugins with metadata, token costs, enabled state      |
+| PUT    | `/plugins/toggle`                  | Toggle single plugin `{ pluginId, enabled }`               |
+| PUT    | `/plugins/bulk-toggle`             | Toggle multiple plugins `{ pluginIds, enabled }`           |
+| GET    | `/mcp/servers`                     | All MCP servers with health + disabled list                |
+| POST   | `/mcp/servers`                     | Add server `{ name, command, args }`                       |
+| DELETE | `/mcp/servers/:name`               | Remove server                                              |
+| POST   | `/mcp/health-check`                | Refresh health status                                      |
+| GET    | `/hooks`                           | All hooks by event + available events                      |
+| PUT    | `/hooks`                           | Update hooks for event `{ event, hooks }`                  |
+| DELETE | `/hooks/:event`                    | Remove all hooks for event                                 |
+| POST   | `/hooks/add`                       | Add single hook `{ event, matcher, command }`              |
+| GET    | `/profiles`                        | All profiles with active detection                         |
+| POST   | `/profiles/switch`                 | Activate profile `{ profileName }`                         |
+| POST   | `/profiles/save-current`           | Snapshot current state `{ name, description }`             |
+| GET    | `/projects`                        | Discover projects with cost/session data                   |
+| GET    | `/projects/:path/settings`         | Read project config files                                  |
+| GET    | `/sessions`                        | Session history with token/tool breakdown                  |
+| GET    | `/config/global-settings`          | Read global settings.json                                  |
+| GET    | `/config/global-local`             | Read global settings.local.json                            |
+| PUT    | `/config/global-local/permissions` | Update global permissions                                  |
+| GET    | `/defaults`                        | Read MCP defaults config                                   |
+| PUT    | `/defaults/disabled-mcps`          | Set default disabled MCPs                                  |
+| POST   | `/defaults/apply`                  | Apply defaults to a project                                |
 
 ## Development
 

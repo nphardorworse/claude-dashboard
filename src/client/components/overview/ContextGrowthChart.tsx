@@ -118,12 +118,12 @@ const ColumnBar = ({ turn, maxContext }: ColumnBarProps) => {
           ))}
         </div>
       </div>
-      <span className="text-[8px] tabular-nums text-zinc-600">
+      <span className="text-[8px] tabular-nums text-zinc-500">
         {turn.turnIndex + 1}
       </span>
 
       {/* Hover tooltip */}
-      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-lg bg-zinc-800 px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover/col:opacity-100">
+      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-lg bg-[var(--overlay-medium)] px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover/col:opacity-100">
         <p className="mb-1 text-[10px] font-semibold text-zinc-300">
           Turn {turn.turnIndex + 1} &middot; {formatTokens(turn.totalContextSize)}
         </p>

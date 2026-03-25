@@ -51,7 +51,7 @@ type MetricCardProps = {
 };
 
 const MetricCard = ({ label, value }: MetricCardProps) => (
-  <div className="rounded-lg bg-zinc-800/50 px-3 py-2">
+  <div className="rounded-lg bg-[var(--overlay-subtle)] px-3 py-2">
     <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
       {label}
     </p>
@@ -73,7 +73,7 @@ const ModelBar = ({ model, costUSD, maxCost }: ModelBarProps) => {
       <span className="w-24 shrink-0 truncate text-xs text-zinc-400">
         {truncateModel(model)}
       </span>
-      <div className="h-3 flex-1 rounded-full bg-zinc-800">
+      <div className="h-3 flex-1 rounded-full bg-[var(--overlay-medium)]">
         <div
           className="h-3 rounded-full bg-indigo-500/70 transition-snappy"
           style={{ width: `${Math.max(widthPercent, 2)}%` }}
@@ -140,7 +140,7 @@ type TurnToolBadgesProps = {
 
 const TurnToolBadges = ({ tools }: TurnToolBadgesProps) => {
   if (tools.length === 0) {
-    return <span className="text-zinc-600">-</span>;
+    return <span className="text-zinc-500">-</span>;
   }
 
   // Dedupe and count
@@ -160,16 +160,16 @@ const TurnToolBadges = ({ tools }: TurnToolBadgesProps) => {
       {shown.map(([name, count]) => (
         <span
           key={name}
-          className="inline-flex items-center gap-0.5 rounded bg-zinc-800 px-1 py-0.5 text-[9px] text-zinc-400"
+          className="inline-flex items-center gap-0.5 rounded bg-[var(--overlay-medium)] px-1 py-0.5 text-[9px] text-zinc-400"
         >
           {name}
           {count > 1 && (
-            <span className="text-zinc-600">&times;{count}</span>
+            <span className="text-zinc-500">&times;{count}</span>
           )}
         </span>
       ))}
       {remaining > 0 && (
-        <span className="text-[9px] text-zinc-600">+{remaining}</span>
+        <span className="text-[9px] text-zinc-500">+{remaining}</span>
       )}
     </div>
   );
@@ -200,7 +200,7 @@ const InlineCompositionBar = ({
   const total = system + history + toolOut + output;
   const widthPct = maxContext > 0 ? (total / maxContext) * 100 : 0;
 
-  if (total === 0) return <span className="text-zinc-600">-</span>;
+  if (total === 0) return <span className="text-zinc-500">-</span>;
 
   const values = [system, history, toolOut, output];
   const segs = COMP_SEGMENTS
@@ -222,7 +222,7 @@ const InlineCompositionBar = ({
         ))}
       </div>
       {/* Hover tooltip */}
-      <div className="pointer-events-none absolute bottom-full right-0 z-10 mb-1.5 rounded-lg bg-zinc-800 px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover/bar:opacity-100">
+      <div className="pointer-events-none absolute bottom-full right-0 z-10 mb-1.5 rounded-lg bg-[var(--overlay-medium)] px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover/bar:opacity-100">
         <div className="flex flex-col gap-0.5">
           {segs.map((s) => (
             <span key={s.key} className="flex items-center gap-1.5 whitespace-nowrap text-[10px] text-zinc-400">
@@ -231,7 +231,7 @@ const InlineCompositionBar = ({
             </span>
           ))}
         </div>
-        <p className="mt-1 border-t border-zinc-700/50 pt-1 text-[9px] text-zinc-500">
+        <p className="mt-1 border-t border-[var(--border-hairline)] pt-1 text-[9px] text-zinc-500">
           Total: {formatTokens(total)}
         </p>
       </div>
@@ -273,7 +273,7 @@ const TurnTableRow = ({ turn, prevTurn, systemEstimate, maxContext }: TurnTableR
         ? "border-purple-500/20 bg-purple-500/[0.04]"
         : isOptimization
           ? "border-emerald-500/20 bg-emerald-500/[0.04]"
-          : "border-zinc-800/40"
+          : "border-[var(--border-hairline)]"
     }`}>
       <td className="px-2 py-1.5 font-mono text-zinc-500">
         {turn.turnIndex + 1}
@@ -291,7 +291,7 @@ const TurnTableRow = ({ turn, prevTurn, systemEstimate, maxContext }: TurnTableR
         title={turn.userPrompt || undefined}
       >
         {turn.userPrompt || (
-          <span className="text-zinc-600 italic">system</span>
+          <span className="text-zinc-500 italic">system</span>
         )}
         {forkCmd && (
           <span className="ml-1.5 text-[9px] text-purple-500/70">
@@ -361,7 +361,7 @@ const TurnTable = ({ turns, systemPromptEstimate }: TurnTableProps) => {
       <div className="overflow-x-auto">
         <table className="w-full text-left">
           <thead>
-            <tr className="border-b border-zinc-700">
+            <tr className="border-b border-[var(--border-accent)]">
               <th className="px-2 py-1.5 text-[10px] font-medium text-zinc-500">
                 #
               </th>
@@ -413,13 +413,13 @@ const TurnTable = ({ turns, systemPromptEstimate }: TurnTableProps) => {
 
 const LoadingState = () => (
   <div className="flex items-center gap-2 py-8">
-    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-600 border-t-indigo-500" />
+    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--border-hairline)] border-t-indigo-500" />
     <span className="text-xs text-zinc-400">Analyzing session JSONL...</span>
   </div>
 );
 
 const ErrorState = ({ message }: { message: string }) => (
-  <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+  <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--overlay-faint)] px-4 py-3">
     <p className="text-xs text-zinc-500">{message}</p>
   </div>
 );
@@ -468,7 +468,7 @@ export const SessionDeepDive = ({
   return (
     <tr>
       <td colSpan={8} className="p-0">
-        <div className="border-b border-indigo-500/20 bg-zinc-900/80 px-4 py-4">
+        <div className="border-b border-indigo-500/20 bg-[var(--surface-raised)] px-4 py-4">
           {/* Header */}
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -476,7 +476,7 @@ export const SessionDeepDive = ({
                 Session Analysis
               </h3>
               {data?.analysis.sessionName && (
-                <span className="rounded bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
+                <span className="rounded bg-[var(--overlay-medium)] px-2 py-0.5 text-[10px] font-medium text-zinc-400">
                   {data.analysis.sessionName}
                 </span>
               )}
@@ -484,7 +484,7 @@ export const SessionDeepDive = ({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md px-2 py-1 text-[10px] text-zinc-500 transition-snappy hover:bg-zinc-800 hover:text-zinc-300"
+              className="rounded-md px-2 py-1 text-[10px] text-zinc-500 transition-snappy hover:bg-[var(--overlay-medium)] hover:text-zinc-300"
             >
               Close
             </button>

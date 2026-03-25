@@ -33,7 +33,7 @@ const sessions = new Hono();
 
 sessions.get("/", async (c) => {
   try {
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
 
     const raw = projectPath
       ? await getSessionsForProject(projectPath)

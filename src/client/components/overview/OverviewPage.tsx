@@ -54,7 +54,7 @@ const ScopeBanner = ({ projectName, onClear }: ScopeBannerProps) => (
     {onClear && (
       <button
         onClick={onClear}
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-blue-400/60 transition-snappy hover:bg-blue-400/10 hover:text-blue-300"
+        className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-blue-400/60 transition-snappy hover:bg-blue-400/10 hover:text-blue-300 before:absolute before:-inset-2.5 before:content-['']"
         title="Return to global view"
       >
         &#10005;

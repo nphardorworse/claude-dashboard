@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { basename } from "path";
 import { getAllSessions } from "../lib/session-scanner";
+import { sumUsageAfterCutoff } from "../lib/jsonl-parser";
 import { getPricing } from "../lib/pricing";
 import { readJsonFile } from "../lib/file-io";
 import { PATHS } from "../lib/paths";
@@ -10,6 +11,13 @@ const SONNET_PRICING = getPricing("sonnet");
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+const DEFAULT_LIMITS: PlanLimits = {
+  sessionMessageLimit: null,
+  weeklyMessageLimit: null,
+  sessionResetsAt: null,
+  weeklyResetsAt: null,
+};
 
 const estimateCost = (inputTokens: number, outputTokens: number): number => {
   return (
@@ -25,40 +33,117 @@ type DashboardConfig = {
 
 const readPlanLimits = async (): Promise<PlanLimits> => {
   const config = await readJsonFile<DashboardConfig>(PATHS.dashboardConfig);
-  return config?.planLimits ?? { sessionTokenLimit: null, weeklyTokenLimit: null };
+  return config?.planLimits ?? DEFAULT_LIMITS;
 };
 
-const aggregateWindow = (
-  allSessions: SessionMeta[],
-  windowMs: number,
-  limit: number | null,
-): UsageWindow => {
+/**
+ * Resolve session reset from a time-of-day string ("HH:MM").
+ * Finds the next occurrence of that time — today if still upcoming, tomorrow if passed.
+ * If the computed window doesn't cover the present (cutoff in the future),
+ * falls back to a rolling 5hr window — the previous window has ended and the
+ * next one's boundaries are unknown until the user checks /usage again.
+ */
+const resolveSessionWindow = (
+  timeStr: string | null,
+): { cutoff: number; resetsInMs: number } => {
   const now = Date.now();
-  const cutoff = now - windowMs;
 
-  const filtered = allSessions.filter(
-    (s) => new Date(s.startTime).getTime() >= cutoff
-  );
-
-  const projectMap = new Map<
-    string,
-    { sessions: number; inputTokens: number; outputTokens: number }
-  >();
-
-  let oldestMs = now;
-
-  for (const session of filtered) {
-    const ts = new Date(session.startTime).getTime();
-    if (ts < oldestMs) oldestMs = ts;
-
-    const key = session.projectPath;
-    const existing = projectMap.get(key) ?? { sessions: 0, inputTokens: 0, outputTokens: 0 };
-    existing.sessions += 1;
-    existing.inputTokens += session.inputTokens;
-    existing.outputTokens += session.outputTokens;
-    projectMap.set(key, existing);
+  if (timeStr) {
+    const parts = timeStr.split(":").map(Number);
+    if (parts.length >= 2 && !Number.isNaN(parts[0]) && !Number.isNaN(parts[1])) {
+      const today = new Date();
+      today.setHours(parts[0], parts[1], 0, 0);
+      let resetMs = today.getTime();
+      if (resetMs <= now) {
+        resetMs += 24 * 60 * 60 * 1000;
+      }
+      const cutoff = resetMs - FIVE_HOURS_MS;
+      if (cutoff <= now) {
+        return { cutoff, resetsInMs: resetMs - now };
+      }
+    }
   }
 
+  return { cutoff: now - FIVE_HOURS_MS, resetsInMs: 0 };
+};
+
+/**
+ * Resolve weekly reset from an ISO timestamp.
+ * If the timestamp is in the past, advances by 7-day increments until future.
+ */
+const resolveWeeklyWindow = (
+  isoStr: string | null,
+): { cutoff: number; resetsInMs: number } => {
+  const now = Date.now();
+
+  if (isoStr) {
+    let resetMs = new Date(isoStr).getTime();
+    if (!Number.isNaN(resetMs)) {
+      while (resetMs <= now) {
+        resetMs += SEVEN_DAYS_MS;
+      }
+      const cutoff = resetMs - SEVEN_DAYS_MS;
+      return { cutoff, resetsInMs: resetMs - now };
+    }
+  }
+
+  return { cutoff: now - SEVEN_DAYS_MS, resetsInMs: 0 };
+};
+
+/**
+ * Aggregate usage for sessions overlapping [cutoff, now].
+ *
+ * Primary metric: **messages** (assistant API calls) — this is what
+ * Anthropic rate-limits on. Each assistant JSONL entry = 1 API call.
+ *
+ * - Sessions fully inside the window → use session-level totals (fast).
+ * - Sessions spanning the boundary → scan raw JSONL entries after cutoff (exact).
+ * - Sessions fully before the window → skipped.
+ */
+const aggregateWindow = async (
+  allSessions: SessionMeta[],
+  cutoff: number,
+  messageLimit: number | null,
+  resetsInMs: number,
+): Promise<UsageWindow> => {
+  const projectMap = new Map<
+    string,
+    { sessions: number; messages: number; inputTokens: number; outputTokens: number }
+  >();
+
+  const boundaryParses: Promise<void>[] = [];
+
+  for (const session of allSessions) {
+    const startMs = new Date(session.startTime).getTime();
+    const endMs = startMs + session.durationMinutes * 60 * 1000;
+
+    if (endMs < cutoff) continue;
+
+    const key = session.projectPath;
+    const existing = projectMap.get(key) ?? { sessions: 0, messages: 0, inputTokens: 0, outputTokens: 0 };
+    existing.sessions += 1;
+    projectMap.set(key, existing);
+
+    if (startMs >= cutoff) {
+      // Fully inside window — use session totals
+      existing.messages += session.userMessages;
+      existing.inputTokens += session.inputTokens;
+      existing.outputTokens += session.outputTokens;
+    } else {
+      // Spans boundary — scan raw JSONL entries with timestamp filter
+      boundaryParses.push(
+        sumUsageAfterCutoff(session.sessionId, session.projectPath, cutoff).then((usage) => {
+          existing.messages += usage.messages;
+          existing.inputTokens += usage.inputTokens;
+          existing.outputTokens += usage.outputTokens;
+        })
+      );
+    }
+  }
+
+  await Promise.all(boundaryParses);
+
+  let totalMessages = 0;
   let totalInput = 0;
   let totalOutput = 0;
   let totalCost = 0;
@@ -66,6 +151,7 @@ const aggregateWindow = (
 
   for (const [path, data] of projectMap) {
     const cost = estimateCost(data.inputTokens, data.outputTokens);
+    totalMessages += data.messages;
     totalInput += data.inputTokens;
     totalOutput += data.outputTokens;
     totalCost += cost;
@@ -73,6 +159,7 @@ const aggregateWindow = (
     projects.push({
       name: basename(path),
       path,
+      messages: data.messages,
       inputTokens: data.inputTokens,
       outputTokens: data.outputTokens,
       totalTokens: data.inputTokens + data.outputTokens,
@@ -81,20 +168,22 @@ const aggregateWindow = (
     });
   }
 
-  projects.sort((a, b) => b.totalTokens - a.totalTokens);
+  projects.sort((a, b) => b.messages - a.messages);
 
-  const totalTokens = totalInput + totalOutput;
-  const resetsInMs = filtered.length > 0 ? Math.max(0, oldestMs + windowMs - now) : 0;
-  const percentage = limit != null && limit > 0 ? (totalTokens / limit) * 100 : null;
+  const messagePercentage =
+    messageLimit != null && messageLimit > 0
+      ? (totalMessages / messageLimit) * 100
+      : null;
 
   return {
+    totalMessages,
+    messageLimit,
+    messagePercentage,
     totalInputTokens: totalInput,
     totalOutputTokens: totalOutput,
-    totalTokens,
+    totalTokens: totalInput + totalOutput,
     totalEstimatedCostUSD: totalCost,
-    totalSessions: filtered.length,
-    limit,
-    percentage,
+    totalSessions: Array.from(projectMap.values()).reduce((sum, p) => sum + p.sessions, 0),
     resetsInMs,
     projects,
   };
@@ -185,8 +274,13 @@ usage.get("/windowed", async (c) => {
     const sessions = await getAllSessions();
     const limits = await readPlanLimits();
 
-    const session = aggregateWindow(sessions, FIVE_HOURS_MS, limits.sessionTokenLimit);
-    const weekly = aggregateWindow(sessions, SEVEN_DAYS_MS, limits.weeklyTokenLimit);
+    const sessionWindow = resolveSessionWindow(limits.sessionResetsAt);
+    const weeklyWindow = resolveWeeklyWindow(limits.weeklyResetsAt);
+
+    const [session, weekly] = await Promise.all([
+      aggregateWindow(sessions, sessionWindow.cutoff, limits.sessionMessageLimit, sessionWindow.resetsInMs),
+      aggregateWindow(sessions, weeklyWindow.cutoff, limits.weeklyMessageLimit, weeklyWindow.resetsInMs),
+    ]);
 
     return c.json({
       session,
