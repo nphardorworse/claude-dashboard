@@ -2,22 +2,11 @@ import { Hono } from "hono";
 import { PATHS, getProjectPath, getMcpJsonPath } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
 import { checkMcpHealth } from "../lib/mcp-health";
+import { withFileLock } from "../lib/file-lock";
+import { PINNED_MCPS } from "../../shared/mcp-pinned";
 import { dirname } from "path";
 import type { McpServerHealth } from "../lib/mcp-health";
-
-type McpServerConfig = {
-  command?: string;
-  url?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  type?: string;
-};
-
-type ClaudeJson = {
-  mcpServers?: Record<string, McpServerConfig>;
-  projects?: Record<string, { mcpServers?: Record<string, McpServerConfig>; [k: string]: unknown }>;
-  [key: string]: unknown;
-};
+import type { ClaudeJson, McpServerConfig, ProjectEntry } from "../lib/types";
 
 type McpServerInfo = {
   name: string;
@@ -66,14 +55,7 @@ const readProjectMcpFromClaudeJson = async (
   return projectEntry?.mcpServers ?? {};
 };
 
-type ProjectEntry = {
-  mcpServers?: Record<string, McpServerConfig>;
-  disabledMcpServers?: string[];
-  disabledMcpjsonServers?: string[];
-  [k: string]: unknown;
-};
-
-// Collect disabled MCP server names from ~/.claude.json project entries
+// Collect disabled MCP server names from ~/.claude.json project entries (excludes pinned)
 const getDisabledServers = async (projectPath?: string): Promise<string[]> => {
   const claudeJson = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
   const projects = (claudeJson?.projects ?? {}) as Record<string, ProjectEntry>;
@@ -85,15 +67,16 @@ const getDisabledServers = async (projectPath?: string): Promise<string[]> => {
     return [
       ...(entry.disabledMcpServers ?? []),
       ...(entry.disabledMcpjsonServers ?? []),
-    ];
+    ].filter((n) => !PINNED_MCPS.has(n));
   }
 
-  // Global: aggregate all disabled MCPs across all projects (deduplicated)
+  // Global: aggregate all disabled MCPs across all projects (deduplicated, excluding pinned)
   const disabled = new Set<string>();
   for (const entry of Object.values(projects)) {
     for (const name of entry.disabledMcpServers ?? []) disabled.add(name);
     for (const name of entry.disabledMcpjsonServers ?? []) disabled.add(name);
   }
+  for (const pinned of PINNED_MCPS) disabled.delete(pinned);
   return Array.from(disabled).sort();
 };
 
@@ -102,15 +85,31 @@ const mcp = new Hono();
 // GET /servers — list all MCP servers with health status + disabled list
 mcp.get("/servers", async (c) => {
   try {
-    const projectPath = getProjectPath(c);
-    const healthResults = checkMcpHealth();
+    const projectPath = await getProjectPath(c);
+    const healthResults = await checkMcpHealth();
     const disabledServers = await getDisabledServers(projectPath);
 
     if (!projectPath) {
-      // Global: read from ~/.claude.json mcpServers
+      // Global: merge MCPs from ~/.claude.json config + health check (plugins/cloud MCPs)
       const data = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
       const mcpServers = data?.mcpServers ?? {};
-      const servers = buildServerList(mcpServers, healthResults, "global");
+      const configServers = buildServerList(mcpServers, healthResults, "global");
+
+      // Health check discovers plugin/cloud MCPs not in ~/.claude.json
+      const configNames = new Set(Object.keys(mcpServers));
+      const extraServers = healthResults
+        .filter((h) => !configNames.has(h.name))
+        .map((h) => ({
+          name: h.name,
+          command: h.command,
+          args: [] as string[],
+          env: {} as Record<string, string>,
+          type: "stdio",
+          status: h.status,
+          source: "global" as const,
+        }));
+
+      const servers = [...configServers, ...extraServers];
       const connectedCount = servers.filter((s) => s.status === "connected").length;
       // Filter out disabled names that are currently active (already shown above)
       const activeNames = new Set(servers.map((s) => s.name));
@@ -135,7 +134,16 @@ mcp.get("/servers", async (c) => {
     const connectedCount = merged.filter((s) => s.status === "connected").length;
     const activeNames = new Set(merged.map((s) => s.name));
     const inactiveServers = disabledServers.filter((name) => !activeNames.has(name));
-    return c.json({ servers: merged, connectedCount, disabledServers: inactiveServers, scope: "project" });
+
+    // All known MCP names: config + health check (plugins/cloud MCPs aren't in mcpServers)
+    const globalData = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
+    const configNames = Object.keys(globalData?.mcpServers ?? {});
+    const healthNames = healthResults.map((h) => h.name);
+    const globalServerNames = [...new Set([...configNames, ...healthNames])].sort();
+    const projectEntry = (globalData?.projects ?? {})[projectPath] as ProjectEntry | undefined;
+    const projectDisabledMcps = projectEntry?.disabledMcpServers ?? [];
+
+    return c.json({ servers: merged, connectedCount, disabledServers: inactiveServers, globalServerNames, projectDisabledMcps, scope: "project" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
@@ -155,37 +163,39 @@ mcp.post("/servers", async (c) => {
       return c.json({ error: "Command is required" }, 400);
     }
 
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const mcpPath = getMcpJsonPath(projectPath);
 
     if (projectPath) {
       await ensureDir(dirname(mcpPath));
     }
 
-    const data = (await readJsonFile<ClaudeJson>(mcpPath)) ?? {};
-    const mcpServers = data.mcpServers ?? {};
+    return withFileLock(mcpPath, async () => {
+      const data = (await readJsonFile<ClaudeJson>(mcpPath)) ?? {};
+      const mcpServers = data.mcpServers ?? {};
 
-    if (mcpServers[name.trim()]) {
-      return c.json(
-        { error: `Server "${name.trim()}" already exists` },
-        409
-      );
-    }
+      if (mcpServers[name.trim()]) {
+        return c.json(
+          { error: `Server "${name.trim()}" already exists` },
+          409
+        );
+      }
 
-    const serverConfig: McpServerConfig = { command: command.trim() };
-    if (args && args.length > 0) {
-      serverConfig.args = args;
-    }
-    if (env && Object.keys(env).length > 0) {
-      serverConfig.env = env;
-    }
+      const serverConfig: McpServerConfig = { command: command.trim() };
+      if (args && args.length > 0) {
+        serverConfig.args = args;
+      }
+      if (env && Object.keys(env).length > 0) {
+        serverConfig.env = env;
+      }
 
-    mcpServers[name.trim()] = serverConfig;
-    data.mcpServers = mcpServers;
+      mcpServers[name.trim()] = serverConfig;
+      data.mcpServers = mcpServers;
 
-    await writeJsonFile(mcpPath, data);
+      await writeJsonFile(mcpPath, data);
 
-    return c.json({ ok: true, name: name.trim() });
+      return c.json({ ok: true, name: name.trim() });
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
@@ -197,22 +207,95 @@ mcp.delete("/servers/:name", async (c) => {
   try {
     const name = c.req.param("name");
 
-    const projectPath = getProjectPath(c);
+    const projectPath = await getProjectPath(c);
     const mcpPath = getMcpJsonPath(projectPath);
 
-    const data = (await readJsonFile<ClaudeJson>(mcpPath)) ?? {};
-    const mcpServers = data.mcpServers ?? {};
+    return withFileLock(mcpPath, async () => {
+      const data = (await readJsonFile<ClaudeJson>(mcpPath)) ?? {};
+      const mcpServers = data.mcpServers ?? {};
 
-    if (!mcpServers[name]) {
-      return c.json({ error: `Server "${name}" not found` }, 404);
+      if (!mcpServers[name]) {
+        return c.json({ error: `Server "${name}" not found` }, 404);
+      }
+
+      delete mcpServers[name];
+      data.mcpServers = mcpServers;
+
+      await writeJsonFile(mcpPath, data);
+
+      return c.json({ ok: true, name });
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
+// PUT /project-disabled — set disabled MCPs for a specific project
+mcp.put("/project-disabled", async (c) => {
+  try {
+    const { projectPath, servers } = await c.req.json<{ projectPath: string; servers: string[] }>();
+    if (!projectPath || typeof projectPath !== "string") {
+      return c.json({ error: "projectPath required" }, 400);
+    }
+    if (!Array.isArray(servers)) {
+      return c.json({ error: "servers array required" }, 400);
     }
 
-    delete mcpServers[name];
-    data.mcpServers = mcpServers;
+    return withFileLock(PATHS.claudeJson, async () => {
+      const claudeJson = (await readJsonFile<ClaudeJson>(PATHS.claudeJson)) ?? {};
+      const projects = claudeJson.projects ?? {};
+      const projectEntry = projects[projectPath] ?? {};
 
-    await writeJsonFile(mcpPath, data);
+      (projectEntry as ProjectEntry).disabledMcpServers = servers.filter((n) => !PINNED_MCPS.has(n));
 
-    return c.json({ ok: true, name });
+      projects[projectPath] = projectEntry;
+      claudeJson.projects = projects;
+      await writeJsonFile(PATHS.claudeJson, claudeJson);
+
+      return c.json({ ok: true, disabled: servers.length });
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
+// PUT /bulk-reenable — remove server names from disabled lists across all projects
+mcp.put("/bulk-reenable", async (c) => {
+  try {
+    const { servers } = await c.req.json<{ servers: string[] }>();
+    if (!Array.isArray(servers) || servers.length === 0) {
+      return c.json({ error: "servers array required" }, 400);
+    }
+
+    // Skip pinned MCPs — they should never be in disabled lists
+    const toRemove = new Set(servers.filter((n) => !PINNED_MCPS.has(n)));
+    if (toRemove.size === 0) {
+      return c.json({ ok: true, projectsUpdated: 0 });
+    }
+
+    return withFileLock(PATHS.claudeJson, async () => {
+      const claudeJson = (await readJsonFile<ClaudeJson>(PATHS.claudeJson)) ?? {};
+      const projects = (claudeJson.projects ?? {}) as Record<string, ProjectEntry>;
+
+      let updated = 0;
+      for (const entry of Object.values(projects)) {
+        if (entry.disabledMcpServers) {
+          const before = entry.disabledMcpServers.length;
+          entry.disabledMcpServers = entry.disabledMcpServers.filter((n) => !toRemove.has(n));
+          if (entry.disabledMcpServers.length < before) updated++;
+        }
+        if (entry.disabledMcpjsonServers) {
+          entry.disabledMcpjsonServers = entry.disabledMcpjsonServers.filter((n) => !toRemove.has(n));
+        }
+      }
+
+      claudeJson.projects = projects;
+      await writeJsonFile(PATHS.claudeJson, claudeJson);
+
+      return c.json({ ok: true, projectsUpdated: updated });
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
@@ -222,7 +305,7 @@ mcp.delete("/servers/:name", async (c) => {
 // POST /health-check — run a fresh health check
 mcp.post("/health-check", async (c) => {
   try {
-    const healthResults = checkMcpHealth();
+    const healthResults = await checkMcpHealth(true);
     return c.json({ results: healthResults });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

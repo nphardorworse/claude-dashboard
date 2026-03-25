@@ -1,4 +1,7 @@
-import { execFileSync } from "child_process";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 export type McpServerHealth = {
   name: string;
@@ -33,15 +36,22 @@ const parseLine = (line: string): McpServerHealth | null => {
   };
 };
 
-export const checkMcpHealth = (): McpServerHealth[] => {
+let healthCache: McpServerHealth[] | null = null;
+let healthCacheTime = 0;
+const HEALTH_TTL_MS = 30_000;
+
+export const checkMcpHealth = async (bypassCache = false): Promise<McpServerHealth[]> => {
+  const now = Date.now();
+  if (!bypassCache && healthCache !== null && now - healthCacheTime < HEALTH_TTL_MS) {
+    return healthCache;
+  }
+
   try {
-    const output = execFileSync("claude", ["mcp", "list"], {
+    const { stdout } = await execFileAsync("claude", ["mcp", "list"], {
       timeout: 15_000,
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
     });
 
-    const lines = output.split("\n").filter((l) => l.trim().length > 0);
+    const lines = stdout.split("\n").filter((l) => l.trim().length > 0);
     const results: McpServerHealth[] = [];
 
     for (const line of lines) {
@@ -51,8 +61,10 @@ export const checkMcpHealth = (): McpServerHealth[] => {
       }
     }
 
+    healthCache = results;
+    healthCacheTime = now;
     return results;
   } catch {
-    return [];
+    return healthCache ?? [];
   }
 };
