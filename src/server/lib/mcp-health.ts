@@ -65,6 +65,9 @@ export const checkMcpHealth = async (bypassCache = false): Promise<McpServerHeal
     healthCacheTime = now;
     return results;
   } catch {
+    if (healthCache) {
+      healthCacheTime = Date.now();
+    }
     return healthCache ?? [];
   }
 };

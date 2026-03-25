@@ -57,12 +57,20 @@ const StatusDot = ({ health }: { health: HealthStatus }) => {
 const OriginBadge = ({
   origin,
   pluginName,
+  pluginNames,
 }: {
   origin: McpOrigin;
   pluginName?: string;
+  pluginNames?: string[];
 }) => {
+  const resolvedPluginLabel =
+    pluginNames && pluginNames.length > 1
+      ? pluginNames.join(", ")
+      : pluginName;
   const label =
-    origin === "plugin" && pluginName ? pluginName : origin.replace("-", " ");
+    origin === "plugin" && resolvedPluginLabel
+      ? resolvedPluginLabel
+      : origin.replace("-", " ");
 
   return (
     <span
@@ -140,6 +148,7 @@ const McpCatalogCard = ({
   name,
   origin,
   pluginName,
+  pluginNames,
   health,
   type,
   command,
@@ -168,7 +177,7 @@ const McpCatalogCard = ({
             <span className="rounded-full bg-[var(--overlay-subtle)] px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-[var(--border-hairline)]">
               {type}
             </span>
-            <OriginBadge origin={origin} pluginName={pluginName} />
+            <OriginBadge origin={origin} pluginName={pluginName} pluginNames={pluginNames} />
             <StatusDot health={health} />
           </div>
           <CommandDisplay command={command} />

@@ -4,6 +4,7 @@ import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
 import { checkMcpHealth } from "../lib/mcp-health";
 import { withFileLock } from "../lib/file-lock";
 import { buildCatalog } from "../lib/catalog-builder";
+import { scanPluginMcps } from "../lib/plugin-mcp-scanner";
 import { dirname } from "path";
 import type { ClaudeJson, ProjectEntry } from "../lib/types";
 import type { McpOrigin, McpServerConfig } from "../../shared/types";
@@ -162,12 +163,17 @@ mcp.put("/project-toggle", async (c) => {
           delete projEntry.mcpServers[mcpName];
         }
       } else if (origin === "global-disabled" && action === "enable") {
-        const sourceConfig = claudeJson.disabledMcpServers?.[mcpName];
+        const globalDisabled = claudeJson.disabledMcpServers ?? {};
+        const sourceConfig = globalDisabled[mcpName];
         if (!sourceConfig) {
           return c.json({ error: `"${mcpName}" not found in global disabled MCPs` }, 404);
         }
-        projEntry.mcpServers = projEntry.mcpServers ?? {};
-        projEntry.mcpServers[mcpName] = sourceConfig;
+        // Move from disabled to active globally
+        const globalActive = claudeJson.mcpServers ?? {};
+        globalActive[mcpName] = sourceConfig;
+        claudeJson.mcpServers = globalActive;
+        delete globalDisabled[mcpName];
+        claudeJson.disabledMcpServers = globalDisabled;
       } else {
         return c.json(
           { error: `Unsupported combination: origin="${origin}", action="${action}"` },
@@ -199,33 +205,50 @@ mcp.post("/copy-to-project", async (c) => {
       return c.json({ error: "mcpName and targetProjectPath are required" }, 400);
     }
 
-    // Find the MCP config from the catalog
-    const catalog = await buildCatalog();
-    let foundConfig: McpServerConfig | null = null;
-
-    for (const group of catalog.groups) {
-      for (const entry of group.entries) {
-        if (entry.name === mcpName) {
-          foundConfig = entry.config;
-          break;
-        }
-      }
-      if (foundConfig) break;
-    }
-
-    if (!foundConfig) {
-      return c.json({ error: `MCP "${mcpName}" not found in catalog` }, 404);
-    }
-
-    if (!foundConfig.command && !foundConfig.url) {
-      return c.json(
-        { error: `MCP "${mcpName}" has no command or url — cannot copy cloud MCPs` },
-        400
-      );
-    }
+    // Pre-fetch cached plugin MCPs outside the lock (cheap, cached)
+    const pluginMcps = await scanPluginMcps();
 
     return withFileLock(PATHS.claudeJson, async () => {
       const claudeJson = (await readJsonFile<ClaudeJson>(PATHS.claudeJson)) ?? {};
+
+      // Look up config directly from claudeJson and plugin MCPs (no health check)
+      let foundConfig: McpServerConfig | null = null;
+
+      // Check global active
+      if (claudeJson.mcpServers?.[mcpName]) {
+        foundConfig = claudeJson.mcpServers[mcpName];
+      }
+      // Check global disabled
+      if (!foundConfig && claudeJson.disabledMcpServers?.[mcpName]) {
+        foundConfig = claudeJson.disabledMcpServers[mcpName];
+      }
+      // Check personal MCPs across all projects
+      if (!foundConfig && claudeJson.projects) {
+        for (const projEntry of Object.values(claudeJson.projects)) {
+          const pe = projEntry as ProjectEntry;
+          if (pe.mcpServers?.[mcpName]) {
+            foundConfig = pe.mcpServers[mcpName];
+            break;
+          }
+        }
+      }
+      // Check plugin MCPs
+      if (!foundConfig) {
+        const pluginMatch = pluginMcps.find((pm) => pm.mcpName === mcpName);
+        if (pluginMatch) foundConfig = pluginMatch.config;
+      }
+
+      if (!foundConfig) {
+        return c.json({ error: `MCP "${mcpName}" not found in catalog` }, 404);
+      }
+
+      if (!foundConfig.command && !foundConfig.url) {
+        return c.json(
+          { error: `MCP "${mcpName}" has no command or url — cannot copy cloud MCPs` },
+          400
+        );
+      }
+
       const projects = claudeJson.projects ?? {};
       const projEntry = (projects[targetProjectPath] ?? {}) as ProjectEntry;
 

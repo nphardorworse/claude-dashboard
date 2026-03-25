@@ -5,7 +5,6 @@ import { withFileLock } from "../lib/file-lock";
 import type { PlanLimits } from "../../shared/types";
 
 type DashboardConfig = {
-  defaultDisabledMcpServers?: string[];
   defaultProfile?: string;
   planLimits?: PlanLimits;
   [key: string]: unknown;
@@ -22,7 +21,6 @@ defaults.get("/", async (c) => {
   try {
     const config = await readConfig();
     return c.json({
-      defaultDisabledMcpServers: config.defaultDisabledMcpServers ?? [],
       defaultProfile: config.defaultProfile ?? null,
     });
   } catch (err) {

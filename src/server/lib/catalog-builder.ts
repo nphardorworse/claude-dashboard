@@ -169,13 +169,26 @@ export const buildCatalog = async (
       const names = existing.pluginNames ?? (existing.pluginName ? [existing.pluginName] : []);
       if (!names.includes(pm.pluginName)) names.push(pm.pluginName);
       existing.pluginNames = names;
+      // Register existing entry in the second plugin's group too
+      const secondGroup = pluginGroupMap.get(pm.pluginName) ?? [];
+      if (!secondGroup.includes(existing)) secondGroup.push(existing);
+      pluginGroupMap.set(pm.pluginName, secondGroup);
       continue;
     }
 
-    const entry = makeEntry(pm.mcpName, "plugin", pm.config, healthMap, pinnedSet, {
-      pluginName: pm.pluginName,
-    });
-    pluginDedupMap.set(pm.mcpName, entry);
+    // Different URL from existing entry with same name — disambiguate
+    if (existing) {
+      existing.name = `${existing.name} (${existing.pluginName})`;
+    }
+    const entry = makeEntry(
+      existing ? `${pm.mcpName} (${pm.pluginName})` : pm.mcpName,
+      "plugin",
+      pm.config,
+      healthMap,
+      pinnedSet,
+      { pluginName: pm.pluginName },
+    );
+    if (!existing) pluginDedupMap.set(pm.mcpName, entry);
 
     const group = pluginGroupMap.get(pm.pluginName) ?? [];
     group.push(entry);
@@ -193,19 +206,24 @@ export const buildCatalog = async (
   }
 
   // 5. Personal MCPs (per-project from claude.json)
-  const personalEntries: McpCatalogEntry[] = [];
-  if (projectPath) {
-    const projEntry = claudeJson?.projects?.[projectPath];
-    if (projEntry?.mcpServers) {
-      for (const [name, config] of Object.entries(projEntry.mcpServers)) {
-        personalEntries.push(
-          makeEntry(name, "personal", config, healthMap, pinnedSet, {
-            sourceProject: projectPath,
-          }),
-        );
-        knownNames.add(name);
-      }
+  const personalGroupsByProject = new Map<string, McpCatalogEntry[]>();
+  const allProjectPaths = projectPath
+    ? [projectPath]
+    : Object.keys(claudeJson?.projects ?? {});
+
+  for (const pp of allProjectPaths) {
+    const projEntry = claudeJson?.projects?.[pp];
+    if (!projEntry?.mcpServers) continue;
+    const entries: McpCatalogEntry[] = [];
+    for (const [name, config] of Object.entries(projEntry.mcpServers)) {
+      entries.push(
+        makeEntry(name, "personal", config, healthMap, pinnedSet, {
+          sourceProject: pp,
+        }),
+      );
+      knownNames.add(name);
     }
+    if (entries.length > 0) personalGroupsByProject.set(pp, entries);
   }
 
   // 6. Cloud MCPs (health entries not matching any known name)
@@ -228,8 +246,10 @@ export const buildCatalog = async (
   }
   groups.push(...pluginGroups);
   groups.push(...projectGroups);
-  if (personalEntries.length > 0) {
-    groups.push(makeGroup("Personal", "personal", personalEntries));
+  for (const [pp, entries] of personalGroupsByProject) {
+    const projName = pp.split("/").pop() ?? pp;
+    const label = projectPath ? "Personal" : `Personal: ${projName}`;
+    groups.push(makeGroup(label, "personal", entries));
   }
   if (cloudEntries.length > 0) {
     groups.push(makeGroup("Cloud", "cloud", cloudEntries));
