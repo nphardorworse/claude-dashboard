@@ -71,6 +71,15 @@ const UsageIcon = () => (
   </svg>
 );
 
+const HowItWorksIcon = () => (
+  <svg {...iconProps}>
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    <line x1="8" y1="7" x2="16" y2="7" />
+    <line x1="8" y1="11" x2="14" y2="11" />
+  </svg>
+);
+
 type NavItem = {
   label: string;
   hash: string;
@@ -85,6 +94,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Hooks", hash: "/hooks", icon: <HooksIcon /> },
   { label: "Profiles", hash: "/profiles", icon: <ProfilesIcon /> },
   { label: "Usage", hash: "/usage", icon: <UsageIcon /> },
+  { label: "How it Works", hash: "/how-it-works", icon: <HowItWorksIcon /> },
 ];
 
 type NavLinkProps = {
