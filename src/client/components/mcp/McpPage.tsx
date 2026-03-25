@@ -66,6 +66,21 @@ const refreshHealth = async (
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 };
 
+const toggleGlobalMcp = async (
+  mcpName: string,
+  action: "enable" | "disable"
+): Promise<void> => {
+  const response = await fetch("/api/mcp/global-toggle", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mcpName, action }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error ?? `HTTP ${response.status}`);
+  }
+};
+
 const toggleProjectMcp = async (
   projectPath: string,
   mcpName: string,
@@ -257,11 +272,26 @@ const CardList = ({ items }: { items: CardItem[] }) => {
 
 type GlobalGroupListProps = {
   groups: McpCatalogGroup[];
+  onGlobalToggle: (name: string, action: "enable" | "disable") => void;
   onPin: (name: string) => void;
   onDelete: (name: string) => void;
 };
 
-const GlobalGroupList = ({ groups, onPin, onDelete }: GlobalGroupListProps) => {
+const getGlobalAction = (
+  entry: McpCatalogEntry,
+  onGlobalToggle: (name: string, action: "enable" | "disable") => void
+): CardItem["action"] => {
+  if (entry.isPinned) return undefined;
+  if (entry.origin === "global") {
+    return { label: "Disable", onClick: () => onGlobalToggle(entry.name, "disable") };
+  }
+  if (entry.origin === "global-disabled") {
+    return { label: "Re-enable", onClick: () => onGlobalToggle(entry.name, "enable") };
+  }
+  return undefined;
+};
+
+const GlobalGroupList = ({ groups, onGlobalToggle, onPin, onDelete }: GlobalGroupListProps) => {
   if (groups.length === 0) {
     return <EmptyState />;
   }
@@ -272,7 +302,7 @@ const GlobalGroupList = ({ groups, onPin, onDelete }: GlobalGroupListProps) => {
       return {
         key: `${entry.origin}-${entry.name}`,
         entry,
-        action: undefined,
+        action: getGlobalAction(entry, onGlobalToggle),
         onPin,
         onDelete: canDelete ? onDelete : undefined,
       };
@@ -453,6 +483,20 @@ export const McpPage = ({ projectPath = null, onClearProject }: McpPageProps) =>
     [projectPath, loadCatalog, toast]
   );
 
+  const handleGlobalToggle = useCallback(
+    async (mcpName: string, action: "enable" | "disable") => {
+      try {
+        await toggleGlobalMcp(mcpName, action);
+        await loadCatalog();
+        toast(`${mcpName} ${action}d globally`, "success");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Toggle failed";
+        toast(msg, "error");
+      }
+    },
+    [loadCatalog, toast]
+  );
+
   const handleCopyToProject = useCallback(
     async (mcpName: string) => {
       if (!projectPath) return;
@@ -573,6 +617,7 @@ export const McpPage = ({ projectPath = null, onClearProject }: McpPageProps) =>
             onToggleForm={handleToggleForm}
             onCancelForm={handleCancelForm}
             onAddServer={handleAddServer}
+            onGlobalToggle={handleGlobalToggle}
             onPin={handlePin}
             onDelete={handleDelete}
             isRefreshing={isRefreshing}
@@ -609,6 +654,7 @@ type GlobalViewContentProps = {
     command: string;
     args: string[];
   }) => Promise<void>;
+  onGlobalToggle: (name: string, action: "enable" | "disable") => void;
   onPin: (name: string) => void;
   onDelete: (name: string) => void;
   isRefreshing: boolean;
@@ -621,6 +667,7 @@ const GlobalViewContent = ({
   onToggleForm,
   onCancelForm,
   onAddServer,
+  onGlobalToggle,
   onPin,
   onDelete,
   isRefreshing,
@@ -647,6 +694,7 @@ const GlobalViewContent = ({
 
       <GlobalGroupList
         groups={catalog.groups}
+        onGlobalToggle={onGlobalToggle}
         onPin={onPin}
         onDelete={onDelete}
       />

@@ -288,6 +288,59 @@ mcp.put("/pinned", async (c) => {
   }
 });
 
+// PUT /global-toggle — enable/disable an MCP globally (moves between mcpServers and disabledMcpServers)
+mcp.put("/global-toggle", async (c) => {
+  try {
+    const { mcpName, action } = await c.req.json<{
+      mcpName: string;
+      action: "enable" | "disable";
+    }>();
+
+    if (!mcpName || !action) {
+      return c.json({ error: "mcpName and action required" }, 400);
+    }
+
+    if (action === "disable") {
+      const dashConfig = await readJsonFile<DashboardConfig>(PATHS.dashboardConfig);
+      const pinnedSet = new Set(dashConfig?.pinnedMcpServers ?? []);
+      if (pinnedSet.has(mcpName)) {
+        return c.json({ error: `"${mcpName}" is pinned and cannot be disabled` }, 409);
+      }
+    }
+
+    return withFileLock(PATHS.claudeJson, async () => {
+      const claudeJson = (await readJsonFile<ClaudeJson>(PATHS.claudeJson)) ?? {};
+      const active = claudeJson.mcpServers ?? {};
+      const disabled = claudeJson.disabledMcpServers ?? {};
+
+      if (action === "disable") {
+        const config = active[mcpName];
+        if (!config) {
+          return c.json({ error: `"${mcpName}" not found in active global MCPs` }, 404);
+        }
+        disabled[mcpName] = config;
+        delete active[mcpName];
+      } else {
+        const config = disabled[mcpName];
+        if (!config) {
+          return c.json({ error: `"${mcpName}" not found in disabled global MCPs` }, 404);
+        }
+        active[mcpName] = config;
+        delete disabled[mcpName];
+      }
+
+      claudeJson.mcpServers = active;
+      claudeJson.disabledMcpServers = disabled;
+      await writeJsonFile(PATHS.claudeJson, claudeJson);
+
+      return c.json({ ok: true, mcpName, action });
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
 // POST /health-check — run a fresh health check
 mcp.post("/health-check", async (c) => {
   try {
