@@ -1,18 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { buildScopedUrl, getProjectDisplayName } from "../../lib/api";
-import { useToast } from "../shared/Toast";
+import { useToast } from "../shared/use-toast";
 import { PageShell } from "../layout/PageShell";
 import { ScopeBanner } from "../shared/ScopeBanner";
 import { ProfileCard } from "./ProfileCard";
 import { ProfileEditor } from "./ProfileEditor";
-
-type ProfileEntry = {
-  name: string;
-  description: string;
-  pluginCount: number;
-  plugins: Record<string, boolean>;
-  isActive: boolean;
-};
+import type { ProfileEntry, HooksMap } from "../../../shared/types";
 
 type ProfilesResponse = {
   profiles: ProfileEntry[];
@@ -22,24 +15,41 @@ type ProfilesResponse = {
 
 type EditorState =
   | { kind: "closed" }
-  | { kind: "create"; prefill?: Record<string, boolean> }
+  | {
+      kind: "create";
+      prefill?: {
+        plugins: Record<string, boolean>;
+        skills: Record<string, boolean>;
+        hooks: HooksMap;
+        enabledMcpServers: string[];
+        disabledMcpServers: string[];
+      };
+    }
   | { kind: "edit"; profile: ProfileEntry };
 
 /* ─── Sub-components ──────────────────────────── */
 
 const ActiveSummary = ({
   activeProfile,
-  pluginCount,
+  activeEntry,
 }: {
   activeProfile: string | null;
-  pluginCount: number | null;
+  activeEntry: ProfileEntry | null;
 }) => {
-  const label =
-    activeProfile != null
-      ? `Active: ${activeProfile} (${pluginCount} plugins)`
-      : "Active: Custom configuration";
+  if (activeProfile == null || !activeEntry) {
+    return <p className="text-sm text-zinc-400">Active: Custom configuration</p>;
+  }
 
-  return <p className="text-sm text-zinc-400">{label}</p>;
+  const parts = [`${activeEntry.pluginCount} plugins`];
+  if (activeEntry.skillCount > 0) parts.push(`${activeEntry.skillCount} skills`);
+  if (activeEntry.hookEventCount > 0) parts.push(`${activeEntry.hookEventCount} hooks`);
+  if (activeEntry.mcpServerCount > 0) parts.push(`${activeEntry.mcpServerCount} MCP`);
+
+  return (
+    <p className="text-sm text-zinc-400">
+      Active: {activeProfile} ({parts.join(", ")})
+    </p>
+  );
 };
 
 const ProfileGrid = ({
@@ -52,7 +62,7 @@ const ProfileGrid = ({
   profiles: ProfileEntry[];
   switchingName: string | null;
   onActivate: (name: string) => void;
-  onEdit: (name: string, description: string, plugins: Record<string, boolean>) => void;
+  onEdit: (profile: ProfileEntry) => void;
   onDelete: (name: string) => Promise<void>;
 }) => (
   <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
@@ -62,7 +72,14 @@ const ProfileGrid = ({
         name={profile.name}
         description={profile.description}
         pluginCount={profile.pluginCount}
+        skillCount={profile.skillCount}
+        hookEventCount={profile.hookEventCount}
+        mcpServerCount={profile.mcpServerCount}
         plugins={profile.plugins}
+        skills={profile.skills}
+        hooks={profile.hooks}
+        enabledMcpServers={profile.enabledMcpServers}
+        disabledMcpServers={profile.disabledMcpServers}
         isActive={profile.isActive}
         isSwitching={switchingName === profile.name}
         onActivate={onActivate}
@@ -174,8 +191,15 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
   );
 
   const handleCreateProfile = useCallback(
-    async (name: string, description: string, plugins: Record<string, boolean>) => {
-      // Client-side duplicate check
+    async (
+      name: string,
+      description: string,
+      plugins: Record<string, boolean>,
+      skills: Record<string, boolean>,
+      hooks: HooksMap,
+      enabledMcpServers: string[],
+      disabledMcpServers: string[]
+    ) => {
       const exists = profiles.some((p) => p.name === name);
       if (exists) {
         throw new Error(`Profile "${name}" already exists`);
@@ -185,7 +209,10 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description, plugins }),
+        body: JSON.stringify({
+          name, description, plugins, skills, hooks,
+          enabledMcpServers, disabledMcpServers,
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -199,11 +226,22 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
   );
 
   const handleUpdateProfile = useCallback(
-    async (name: string, description: string, plugins: Record<string, boolean>) => {
+    async (
+      name: string,
+      description: string,
+      plugins: Record<string, boolean>,
+      skills: Record<string, boolean>,
+      hooks: HooksMap,
+      enabledMcpServers: string[],
+      disabledMcpServers: string[]
+    ) => {
       const res = await fetch(`/api/profiles/${encodeURIComponent(name)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description, plugins }),
+        body: JSON.stringify({
+          description, plugins, skills, hooks,
+          enabledMcpServers, disabledMcpServers,
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -221,38 +259,53 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
   }, []);
 
   const handleSaveCurrent = useCallback(async () => {
-    // Fetch current effective plugins and pre-fill the editor
     try {
-      const url = buildScopedUrl("/api/plugins", projectPath);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const [pluginsRes, hooksRes, mcpRes] = await Promise.all([
+        fetch(buildScopedUrl("/api/plugins", projectPath)),
+        fetch(buildScopedUrl("/api/hooks", projectPath)),
+        fetch(buildScopedUrl("/api/mcp/catalog", projectPath)),
+      ]);
+
+      const pluginsData = pluginsRes.ok ? await pluginsRes.json() : { plugins: [] };
+      const hooksData = hooksRes.ok ? await hooksRes.json() : { hooks: {} };
+      const mcpData = mcpRes.ok ? await mcpRes.json() : { groups: [] };
+
       const plugins: Record<string, boolean> = {};
-      for (const p of data.plugins ?? []) {
+      for (const p of pluginsData.plugins ?? []) {
         if (p.enabled) plugins[p.id] = true;
       }
-      setEditor({ kind: "create", prefill: plugins });
+
+      const skillsRes = await fetch(buildScopedUrl("/api/skills", projectPath));
+      const skillsData = skillsRes.ok ? await skillsRes.json() : { skills: [] };
+      const skills: Record<string, boolean> = {};
+      for (const s of skillsData.skills ?? []) {
+        if (s.enabled) skills[s.id] = true;
+      }
+
+      const enabledMcpServers: string[] = [];
+      const disabledMcpServers: string[] = [];
+      for (const group of mcpData.groups ?? []) {
+        for (const entry of group.entries ?? []) {
+          if (group.origin === "global-disabled") {
+            disabledMcpServers.push(entry.name);
+          } else if (group.origin === "global") {
+            enabledMcpServers.push(entry.name);
+          }
+        }
+      }
+
+      setEditor({
+        kind: "create",
+        prefill: { plugins, skills, hooks: hooksData.hooks ?? {}, enabledMcpServers, disabledMcpServers },
+      });
     } catch {
-      // Fallback: open blank editor
       setEditor({ kind: "create" });
     }
   }, [projectPath]);
 
-  const handleOpenEdit = useCallback(
-    (name: string, description: string, plugins: Record<string, boolean>) => {
-      setEditor({
-        kind: "edit",
-        profile: {
-          name,
-          description,
-          plugins,
-          pluginCount: Object.values(plugins).filter(Boolean).length,
-          isActive: false,
-        },
-      });
-    },
-    []
-  );
+  const handleOpenEdit = useCallback((profile: ProfileEntry) => {
+    setEditor({ kind: "edit", profile });
+  }, []);
 
   const handleCloseEditor = useCallback(() => {
     setEditor({ kind: "closed" });
@@ -283,7 +336,17 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
   // Show editor full-page when open
   if (editor.kind !== "closed") {
     const isEdit = editor.kind === "edit";
-    const prefill = editor.kind === "create" ? (editor.prefill ?? {}) : {};
+    const emptyPrefill = {
+      plugins: {} as Record<string, boolean>,
+      skills: {} as Record<string, boolean>,
+      hooks: {} as HooksMap,
+      enabledMcpServers: [] as string[],
+      disabledMcpServers: [] as string[],
+    };
+    const prefill = editor.kind === "create"
+      ? (editor.prefill ?? emptyPrefill)
+      : emptyPrefill;
+
     return (
       <PageShell title={pageTitle}>
         <ProfileEditor
@@ -292,7 +355,11 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
           projectPath={projectPath}
           initialName={isEdit ? editor.profile.name : ""}
           initialDescription={isEdit ? editor.profile.description : ""}
-          initialPlugins={isEdit ? editor.profile.plugins : prefill}
+          initialPlugins={isEdit ? editor.profile.plugins : prefill.plugins}
+          initialSkills={isEdit ? editor.profile.skills : prefill.skills}
+          initialHooks={isEdit ? editor.profile.hooks : prefill.hooks}
+          initialEnabledMcpServers={isEdit ? editor.profile.enabledMcpServers : prefill.enabledMcpServers}
+          initialDisabledMcpServers={isEdit ? editor.profile.disabledMcpServers : prefill.disabledMcpServers}
           onSave={isEdit ? handleUpdateProfile : handleCreateProfile}
           onCancel={handleCloseEditor}
         />
@@ -300,8 +367,7 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
     );
   }
 
-  const activeEntry = profiles.find((p) => p.isActive);
-  const activePluginCount = activeEntry?.pluginCount ?? null;
+  const activeEntry = profiles.find((p) => p.isActive) ?? null;
 
   return (
     <PageShell title={pageTitle}>
@@ -311,7 +377,7 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
         <div className="flex items-center justify-between">
           <ActiveSummary
             activeProfile={activeProfile}
-            pluginCount={activePluginCount}
+            activeEntry={activeEntry}
           />
 
           <div className="flex gap-2">
