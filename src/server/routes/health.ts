@@ -4,16 +4,18 @@ import { join } from "path";
 import { PATHS, getProjectPath, getSettingsPath, getMcpJsonPath } from "../lib/paths";
 import { readJsonFile } from "../lib/file-io";
 import { scanPlugins } from "../lib/plugin-scanner";
-import { getTokenLevel } from "../lib/cost-estimator";
+import { scanSkills } from "../lib/skill-scanner";
+import { getTokenLevel, getOverallTokenLevel, DEFAULT_CONTEXT_WINDOW, detectContextWindowFromSessions } from "../lib/cost-estimator";
+import { getAllSessions } from "../lib/session-scanner";
 import type {
   HealthResponse,
   HealthWarning,
   TopPluginByCost,
-  TokenLevel,
 } from "../../shared/types";
 
 type SettingsJson = {
   enabledPlugins?: Record<string, boolean>;
+  enabledSkills?: Record<string, boolean>;
   hooks?: Record<string, unknown[]>;
   [key: string]: unknown;
 };
@@ -26,6 +28,10 @@ type ClaudeJson = {
 type ProfileFile = {
   _description: string;
   enabledPlugins: Record<string, boolean>;
+  enabledSkills?: Record<string, boolean>;
+  hooks?: Record<string, unknown[]>;
+  enabledMcpServers?: string[];
+  disabledMcpServers?: string[];
 };
 
 const getEnabledKeys = (plugins: Record<string, boolean>): Set<string> => {
@@ -53,7 +59,11 @@ const isExactMatch = (
 };
 
 const detectActiveProfile = async (
-  settingsPlugins: Record<string, boolean>
+  settingsPlugins: Record<string, boolean>,
+  settingsSkills: Record<string, boolean>,
+  settingsHooks: Record<string, unknown[]>,
+  enabledMcpNames: Set<string>,
+  disabledMcpNames: Set<string>
 ): Promise<string | null> => {
   try {
     const files = await readdir(PATHS.profilesDir);
@@ -64,9 +74,25 @@ const detectActiveProfile = async (
       const data = await readJsonFile<ProfileFile>(filePath);
       if (!data || !data.enabledPlugins) continue;
 
-      if (isExactMatch(data.enabledPlugins, settingsPlugins)) {
-        return file.replace(/\.json$/, "");
+      if (!isExactMatch(data.enabledPlugins, settingsPlugins)) continue;
+
+      if (!isExactMatch(data.enabledSkills ?? {}, settingsSkills)) continue;
+
+      const profileHooksStr = JSON.stringify(data.hooks ?? {}, Object.keys(data.hooks ?? {}).sort());
+      const settingsHooksStr = JSON.stringify(settingsHooks, Object.keys(settingsHooks).sort());
+      if (profileHooksStr !== settingsHooksStr) continue;
+
+      let mcpMatch = true;
+      for (const name of data.enabledMcpServers ?? []) {
+        if (!enabledMcpNames.has(name)) { mcpMatch = false; break; }
       }
+      if (!mcpMatch) continue;
+      for (const name of data.disabledMcpServers ?? []) {
+        if (!disabledMcpNames.has(name)) { mcpMatch = false; break; }
+      }
+      if (!mcpMatch) continue;
+
+      return file.replace(/\.json$/, "");
     }
   } catch {
     // Profiles dir may not exist
@@ -94,10 +120,25 @@ const countHookCommands = (hooks: Record<string, unknown[]>): number => {
   return total;
 };
 
-const getOverallTokenLevel = (tokens: number): TokenLevel => {
-  if (tokens < 50_000) return "low";
-  if (tokens <= 150_000) return "medium";
-  return "high";
+type DashboardConfig = {
+  contextWindowSize?: number | null;
+  [key: string]: unknown;
+};
+
+const resolveContextWindow = async (): Promise<number> => {
+  const config = await readJsonFile<DashboardConfig>(PATHS.dashboardConfig);
+  const override = config?.contextWindowSize;
+  if (override != null) return override;
+
+  try {
+    const sessions = await getAllSessions();
+    const detected = detectContextWindowFromSessions(sessions);
+    if (detected != null) return detected;
+  } catch {
+    // Fall through to default
+  }
+
+  return DEFAULT_CONTEXT_WINDOW;
 };
 
 const findDuplicatePlugins = (
@@ -133,11 +174,33 @@ health.get("/", async (c) => {
       ? getSettingsPath(projectPath)
       : PATHS.globalSettings;
 
-    const [settings, claudeJson, pluginList] = await Promise.all([
+    const [settings, claudeJson, pluginList, contextWindowSize] = await Promise.all([
       readJsonFile<SettingsJson>(settingsPath),
       readJsonFile<ClaudeJson>(PATHS.claudeJson),
       projectPath ? scanPlugins(getSettingsPath(projectPath)) : scanPlugins(),
+      resolveContextWindow(),
     ]);
+
+    // Scan skills to compute accurate per-plugin active token counts
+    const skillList = await scanSkills(
+      projectPath ? getSettingsPath(projectPath) : undefined,
+      projectPath
+    );
+
+    // Build a map of pluginId -> sum of enabled skill tokens
+    const enabledSkillTokensByPlugin = new Map<string, number>();
+    for (const skill of skillList) {
+      if (!skill.enabled || !skill.pluginId) continue;
+      const current = enabledSkillTokensByPlugin.get(skill.pluginId) ?? 0;
+      enabledSkillTokensByPlugin.set(skill.pluginId, current + skill.estimatedTokens);
+    }
+
+    // Compute activeEstimatedTokens and recalculate tokenLevel for each plugin
+    for (const plugin of pluginList) {
+      const skillTokens = enabledSkillTokensByPlugin.get(plugin.id) ?? 0;
+      plugin.activeEstimatedTokens = plugin.baseEstimatedTokens + skillTokens;
+      plugin.tokenLevel = getTokenLevel(plugin.activeEstimatedTokens, contextWindowSize);
+    }
 
     const enabledPlugins = settings?.enabledPlugins ?? {};
     const hooks = settings?.hooks ?? {};
@@ -181,15 +244,25 @@ health.get("/", async (c) => {
       hooks as Record<string, unknown[]>
     );
 
-    // Token estimation (only enabled plugins)
+    // Token estimation (only enabled plugins, using active skill tokens)
     const estimatedTokensPerTurn = pluginList
       .filter((p) => p.enabled)
-      .reduce((sum, p) => sum + p.estimatedTokens, 0);
+      .reduce((sum, p) => sum + p.activeEstimatedTokens, 0);
 
-    const tokenBudgetLevel = getOverallTokenLevel(estimatedTokensPerTurn);
+    const tokenBudgetLevel = getOverallTokenLevel(estimatedTokensPerTurn, contextWindowSize);
 
     // Active profile detection
-    const activeProfile = await detectActiveProfile(enabledPlugins);
+    const enabledSkills = settings?.enabledSkills ?? {};
+    const enabledMcpNames = new Set(Object.keys(claudeJson?.mcpServers ?? {}));
+    const disabledMcpNames = new Set(Object.keys(claudeJson?.disabledMcpServers ?? {}));
+
+    const activeProfile = await detectActiveProfile(
+      enabledPlugins,
+      enabledSkills as Record<string, boolean>,
+      hooks as Record<string, unknown[]>,
+      enabledMcpNames,
+      disabledMcpNames
+    );
 
     // Build warnings
     const warnings: HealthWarning[] = [];
@@ -235,14 +308,14 @@ health.get("/", async (c) => {
       });
     }
 
-    // Top plugins by cost (top 10, enabled only, sorted descending)
+    // Top plugins by cost (top 10, enabled only, sorted by active cost descending)
     const topPluginsByCost: TopPluginByCost[] = pluginList
       .filter((p) => p.enabled)
-      .sort((a, b) => b.estimatedTokens - a.estimatedTokens)
+      .sort((a, b) => b.activeEstimatedTokens - a.activeEstimatedTokens)
       .slice(0, 10)
       .map((p) => ({
         name: p.name,
-        estimatedTokens: p.estimatedTokens,
+        estimatedTokens: p.activeEstimatedTokens,
         tokenLevel: p.tokenLevel,
       }));
 
@@ -257,6 +330,7 @@ health.get("/", async (c) => {
         estimatedTokensPerTurn,
         tokenBudgetLevel,
         activeProfile,
+        contextWindowSize,
       },
       warnings,
       topPluginsByCost,
