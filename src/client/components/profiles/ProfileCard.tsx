@@ -1,14 +1,22 @@
 import { useCallback, useState } from "react";
+import type { HooksMap, ProfileEntry } from "../../../shared/types";
 
 type ProfileCardProps = {
   name: string;
   description: string;
   pluginCount: number;
+  skillCount: number;
+  hookEventCount: number;
+  mcpServerCount: number;
   plugins: Record<string, boolean>;
+  skills: Record<string, boolean>;
+  hooks: HooksMap;
+  enabledMcpServers: string[];
+  disabledMcpServers: string[];
   isActive: boolean;
   isSwitching: boolean;
   onActivate: (name: string) => void;
-  onEdit: (name: string, description: string, plugins: Record<string, boolean>) => void;
+  onEdit: (profile: ProfileEntry) => void;
   onDelete: (name: string) => Promise<void>;
 };
 
@@ -18,10 +26,37 @@ const ActiveBadge = () => (
   </span>
 );
 
-const PluginCountBadge = ({ count }: { count: number }) => (
-  <span className="rounded-full bg-[var(--overlay-medium)] px-2.5 py-0.5 text-xs font-medium text-zinc-300">
-    {count} plugins
-  </span>
+const SuiteBadges = ({
+  pluginCount,
+  skillCount,
+  hookEventCount,
+  mcpServerCount,
+}: {
+  pluginCount: number;
+  skillCount: number;
+  hookEventCount: number;
+  mcpServerCount: number;
+}) => (
+  <div className="flex flex-wrap gap-1.5">
+    <span className="rounded-full bg-[var(--overlay-medium)] px-2 py-0.5 text-[11px] font-medium text-zinc-300">
+      {pluginCount} plugins
+    </span>
+    {skillCount > 0 && (
+      <span className="rounded-full bg-[var(--overlay-medium)] px-2 py-0.5 text-[11px] font-medium text-zinc-400">
+        {skillCount} skills
+      </span>
+    )}
+    {hookEventCount > 0 && (
+      <span className="rounded-full bg-[var(--overlay-medium)] px-2 py-0.5 text-[11px] font-medium text-zinc-400">
+        {hookEventCount} hooks
+      </span>
+    )}
+    {mcpServerCount > 0 && (
+      <span className="rounded-full bg-[var(--overlay-medium)] px-2 py-0.5 text-[11px] font-medium text-zinc-400">
+        {mcpServerCount} MCP
+      </span>
+    )}
+  </div>
 );
 
 const ActivateButton = ({
@@ -108,7 +143,14 @@ export const ProfileCard = ({
   name,
   description,
   pluginCount,
+  skillCount,
+  hookEventCount,
+  mcpServerCount,
   plugins,
+  skills,
+  hooks,
+  enabledMcpServers,
+  disabledMcpServers,
   isActive,
   isSwitching,
   onActivate,
@@ -123,8 +165,23 @@ export const ProfileCard = ({
   }, [onActivate, name]);
 
   const handleEdit = useCallback(() => {
-    onEdit(name, description, plugins);
-  }, [onEdit, name, description, plugins]);
+    onEdit({
+      name,
+      description,
+      pluginCount,
+      skillCount,
+      hookEventCount,
+      mcpServerCount,
+      plugins,
+      skills,
+      hooks,
+      enabledMcpServers,
+      disabledMcpServers,
+      isActive,
+    });
+  }, [name, description, pluginCount, skillCount, hookEventCount, mcpServerCount,
+      plugins, skills, hooks, enabledMcpServers, disabledMcpServers, isActive,
+      onEdit]);
 
   const handleDeleteClick = useCallback(() => {
     setIsConfirming(true);
@@ -192,7 +249,12 @@ export const ProfileCard = ({
         <p className="text-sm leading-relaxed text-zinc-400">{description}</p>
 
         <div className="mt-auto flex flex-col gap-3">
-          <PluginCountBadge count={pluginCount} />
+          <SuiteBadges
+            pluginCount={pluginCount}
+            skillCount={skillCount}
+            hookEventCount={hookEventCount}
+            mcpServerCount={mcpServerCount}
+          />
           <div className="flex gap-2">
             <ActivateButton
               isActive={isActive}
