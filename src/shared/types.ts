@@ -15,6 +15,8 @@ export type PluginInfo = {
   lastUpdated: string;
   contentSizeBytes: number;
   estimatedTokens: number;
+  baseEstimatedTokens: number;
+  activeEstimatedTokens: number;
   tokenLevel: TokenLevel;
   hasAgents: boolean;
   hasSkills: boolean;
@@ -87,6 +89,7 @@ export type HealthSummary = {
   estimatedTokensPerTurn: number;
   tokenBudgetLevel: TokenLevel;
   activeProfile: string | null;
+  contextWindowSize: number;
 };
 
 export type HealthResponse = {
@@ -268,7 +271,45 @@ export type Insight = {
   category: "context" | "cache" | "model" | "session" | "plugins";
 };
 
+// --- Hook types (shared for profiles) ---
+
+export type HookCommand = {
+  type: string;
+  command: string;
+  timeout?: number;
+};
+
+export type HookEntry = {
+  matcher: string;
+  hooks: HookCommand[];
+};
+
+export type HooksMap = Record<string, HookEntry[]>;
+
+// --- Profile types ---
+
+export type ProfileEntry = {
+  name: string;
+  description: string;
+  pluginCount: number;
+  skillCount: number;
+  hookEventCount: number;
+  mcpServerCount: number;
+  plugins: Record<string, boolean>;
+  skills: Record<string, boolean>;
+  hooks: HooksMap;
+  enabledMcpServers: string[];
+  disabledMcpServers: string[];
+  isActive: boolean;
+};
+
 // --- MCP Catalog types ---
+
+export type ContextWindowResponse = {
+  detected: number | null;
+  override: number | null;
+  effective: number;
+};
 
 export type McpOrigin = "global" | "global-disabled" | "plugin" | "project" | "personal" | "cloud";
 
