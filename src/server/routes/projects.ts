@@ -3,6 +3,7 @@ import { basename, join, resolve } from "path";
 import { access } from "fs/promises";
 import { PATHS, loadKnownProjects } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
+import { withFileLock } from "../lib/file-lock";
 import { validatePermissions, validateHookEntries, validateHooksMap } from "../lib/validation";
 
 type ModelUsageEntry = {
@@ -197,9 +198,10 @@ projects.put("/:projectPath/settings", async (c) => {
     }
 
     await ensureDir(paths.claudeDir);
-    await writeJsonFile(paths.settings, body.settings);
-
-    return c.json({ ok: true });
+    return await withFileLock(paths.settings, async () => {
+      await writeJsonFile(paths.settings, body.settings);
+      return c.json({ ok: true });
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
@@ -225,9 +227,10 @@ projects.put("/:projectPath/local-settings", async (c) => {
     }
 
     await ensureDir(paths.claudeDir);
-    await writeJsonFile(paths.localSettings, body.settings);
-
-    return c.json({ ok: true });
+    return await withFileLock(paths.localSettings, async () => {
+      await writeJsonFile(paths.localSettings, body.settings);
+      return c.json({ ok: true });
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);

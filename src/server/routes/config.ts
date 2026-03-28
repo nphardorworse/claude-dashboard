@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { PATHS } from "../lib/paths";
 import { readJsonFile, writeJsonFile } from "../lib/file-io";
+import { withFileLock } from "../lib/file-lock";
 import { validatePermissions, validateHooksMap, isPlainObject } from "../lib/validation";
 
 const config = new Hono();
@@ -27,8 +28,10 @@ config.put("/global-settings", async (c) => {
       const hooksCheck = validateHooksMap(body.hooks);
       if (!hooksCheck.valid) return c.json({ error: hooksCheck.error }, 400);
     }
-    await writeJsonFile(PATHS.globalSettings, body);
-    return c.json({ ok: true });
+    return await withFileLock(PATHS.globalSettings, async () => {
+      await writeJsonFile(PATHS.globalSettings, body);
+      return c.json({ ok: true });
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
@@ -57,8 +60,10 @@ config.put("/global-local", async (c) => {
       const hooksCheck = validateHooksMap(body.hooks);
       if (!hooksCheck.valid) return c.json({ error: hooksCheck.error }, 400);
     }
-    await writeJsonFile(PATHS.globalLocalSettings, body);
-    return c.json({ ok: true });
+    return await withFileLock(PATHS.globalLocalSettings, async () => {
+      await writeJsonFile(PATHS.globalLocalSettings, body);
+      return c.json({ ok: true });
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
@@ -73,10 +78,12 @@ config.put("/global-local/permissions", async (c) => {
     if (!permResult.valid) {
       return c.json({ error: permResult.error }, 400);
     }
-    const existing = (await readJsonFile<Record<string, unknown>>(PATHS.globalLocalSettings)) ?? {};
-    existing.permissions = { allow: permResult.value };
-    await writeJsonFile(PATHS.globalLocalSettings, existing);
-    return c.json({ ok: true });
+    return await withFileLock(PATHS.globalLocalSettings, async () => {
+      const existing = (await readJsonFile<Record<string, unknown>>(PATHS.globalLocalSettings)) ?? {};
+      existing.permissions = { allow: permResult.value };
+      await writeJsonFile(PATHS.globalLocalSettings, existing);
+      return c.json({ ok: true });
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
