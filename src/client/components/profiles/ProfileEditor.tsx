@@ -287,7 +287,7 @@ export const ProfileEditor = ({
           });
         }
       } catch {
-        // Lists stay empty
+        setError("Failed to load available plugins and skills. Check that the server is running.");
       } finally {
         setIsLoading(false);
       }
@@ -471,6 +471,7 @@ export const ProfileEditor = ({
       await onSave(trimmedName, description.trim(), plugins, skills, hooks, enabledMcpServers, disabledMcpServers);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
       setIsSaving(false);
     }
   }, [name, description, enabledPlugins, enabledSkills, hooksMap, includedHookEvents, mcpEnabled, onSave]);

@@ -84,25 +84,34 @@ const detectActiveProfile = async (
       const settingsHooksStr = stableStringify(settingsHooks);
       if (profileHooksStr !== settingsHooksStr) continue;
 
-      // MCP exact match: size + membership
+      // MCP lenient match: skip servers that no longer exist (profiles may
+      // reference servers that have since been removed from ~/.claude.json)
       const profileEnabled = data.enabledMcpServers ?? [];
       const profileDisabled = data.disabledMcpServers ?? [];
-      if (profileEnabled.length !== enabledMcpNames.size) continue;
-      if (profileDisabled.length !== disabledMcpNames.size) continue;
+      const profileTracksMcp = profileEnabled.length > 0 || profileDisabled.length > 0;
       let mcpMatch = true;
-      for (const name of profileEnabled) {
-        if (!enabledMcpNames.has(name)) { mcpMatch = false; break; }
-      }
-      if (!mcpMatch) continue;
-      for (const name of profileDisabled) {
-        if (!disabledMcpNames.has(name)) { mcpMatch = false; break; }
+      if (profileTracksMcp) {
+        for (const name of profileEnabled) {
+          if (!enabledMcpNames.has(name) && !disabledMcpNames.has(name)) continue;
+          if (!enabledMcpNames.has(name)) { mcpMatch = false; break; }
+        }
+        if (mcpMatch) {
+          for (const name of profileDisabled) {
+            if (!enabledMcpNames.has(name) && !disabledMcpNames.has(name)) continue;
+            if (!disabledMcpNames.has(name)) { mcpMatch = false; break; }
+          }
+        }
       }
       if (!mcpMatch) continue;
 
       return file.replace(/\.json$/, "");
     }
-  } catch {
-    // Profiles dir may not exist
+  } catch (err) {
+    const isNotFound = err instanceof Error && "code" in err &&
+      (err as NodeJS.ErrnoException).code === "ENOENT";
+    if (!isNotFound) {
+      console.warn("[health] Unexpected error detecting active profile:", err);
+    }
   }
 
   return null;

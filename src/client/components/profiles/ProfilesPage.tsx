@@ -160,7 +160,10 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ profileName: name }),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error ?? `HTTP ${res.status}`);
+        }
         toast(`Switched to "${name}"`, "success");
         await fetchProfiles();
       } catch (err) {
@@ -301,7 +304,7 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
         prefill: { plugins, skills, hooks: hooksData.hooks ?? {}, enabledMcpServers, disabledMcpServers },
       });
     } catch {
-      setEditor({ kind: "create" });
+      toast("Failed to snapshot current settings. Check server connection.", "error");
     }
   }, [projectPath]);
 
