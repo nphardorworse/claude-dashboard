@@ -63,13 +63,13 @@ const CASCADE_ITEMS: CascadeItem[] = [
       },
       {
         prefix: "├──",
-        text: "Profile's plugins → enabled",
+        text: "Profile's plugins, skills, hooks → applied",
         color: "red",
       },
       {
         prefix: "└──",
-        text: "Hooks, MCPs, skills → follow plugin state",
-        color: "green",
+        text: "MCP servers → enabled/disabled per profile",
+        color: "red",
       },
     ],
   },

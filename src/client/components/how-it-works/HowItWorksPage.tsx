@@ -54,7 +54,7 @@ const BEGINNER_CONCEPTS: ConceptItem[] = [
     icon: <ProfilesIcon />,
     title: "Profile",
     description:
-      'A profile is a dashboard feature — not built into Claude Code itself. It\'s a saved set of enabled plugins, like a preset. Instead of toggling 20 plugins one by one, you switch to a profile and all the right plugins activate. The dashboard comes with presets like "core" (minimal), "mobile" (React Native focused), "web", and "full".',
+      'A profile is a dashboard feature — not built into Claude Code itself. It\'s a saved configuration preset that includes enabled plugins, skills, hooks, and MCP server state. Instead of toggling everything one by one, you switch to a profile and the whole setup activates. The dashboard comes with presets like "core" (minimal), "mobile" (React Native focused), "web", and "full".',
   },
 ];
 
@@ -69,7 +69,7 @@ const ADVANCED_CONCEPTS: ConceptItem[] = [
     icon: <SkillsIcon />,
     title: "Skill",
     description:
-      "Markdown files within plugin directories that define specialized prompts and tool-use patterns. Registered via frontmatter (name, description). Invoked via the Skill tool or slash commands. Can be toggled independently in settings.json under disabledSkills.",
+      "Markdown files within plugin directories that define specialized prompts and tool-use patterns. Registered via frontmatter (name, description). Invoked via the Skill tool or slash commands. Can be toggled independently in settings.json under enabledSkills (a boolean map).",
   },
   {
     icon: <McpIcon />,
@@ -87,7 +87,7 @@ const ADVANCED_CONCEPTS: ConceptItem[] = [
     icon: <ProfilesIcon />,
     title: "Profile",
     description:
-      "A dashboard feature (not native to Claude Code). JSON files in ~/.claude/profiles/ containing { enabledPlugins: string[] }. Switching a profile overwrites the global enabledPlugins list in settings.json. All skills and bundled MCPs of the enabled plugins become active.",
+      "A dashboard feature (not native to Claude Code). JSON files in ~/.claude/profiles/ containing enabledPlugins, enabledSkills (both Record<string, boolean>), hooks, enabledMcpServers, and disabledMcpServers. Switching a profile writes to the settings file at the current scope (global or project). Plugins, skills, hooks, and MCP state are all set directly from the profile.",
   },
 ];
 

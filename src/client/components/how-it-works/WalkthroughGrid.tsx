@@ -29,7 +29,7 @@ const TAB_ITEMS: TabItem[] = [
   {
     label: "Profiles",
     description:
-      "Plugin presets for different workflows. Switch between core/mobile/web/science/full with one click, or save your current setup as a custom profile.",
+      "Configuration presets for different workflows. Switch between core/mobile/web/science/full with one click, or save your current setup as a custom profile. Each profile stores plugins, skills, hooks, and MCP state.",
   },
   {
     label: "Usage",
