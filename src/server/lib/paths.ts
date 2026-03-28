@@ -1,5 +1,5 @@
 import { homedir } from "os";
-import { join, resolve } from "path";
+import { join, resolve, isAbsolute } from "path";
 import type { Context } from "hono";
 import { readFile, readdir } from "fs/promises";
 
@@ -43,7 +43,9 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
         try {
           const raw = await readFile(join(metaDir, file), "utf-8");
           const data = JSON.parse(raw);
-          if (data.project_path) projects.add(data.project_path);
+          if (data.project_path && typeof data.project_path === "string" && isAbsolute(data.project_path)) {
+            projects.add(resolve(data.project_path));
+          }
         } catch { /* skip */ }
       })
     );
@@ -72,7 +74,10 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
           if (!line.trim()) continue;
           try {
             const parsed = JSON.parse(line.trim());
-            if (parsed.cwd) { projects.add(parsed.cwd); break; }
+            if (parsed.cwd && typeof parsed.cwd === "string" && isAbsolute(parsed.cwd)) {
+              projects.add(resolve(parsed.cwd));
+              break;
+            }
           } catch { continue; }
         }
       } catch { continue; }

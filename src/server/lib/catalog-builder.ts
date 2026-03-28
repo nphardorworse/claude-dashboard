@@ -178,7 +178,12 @@ export const buildCatalog = async (
 
     // Different URL from existing entry with same name — disambiguate
     if (existing) {
-      existing.name = `${existing.name} (${existing.pluginName})`;
+      // Only add suffix if not already disambiguated (prevents double-suffix on 3+ collisions)
+      if (existing.name === pm.mcpName) {
+        existing.name = `${pm.mcpName} (${existing.pluginName})`;
+      }
+      // Remove from dedup map so subsequent same-named entries don't match stale record
+      pluginDedupMap.delete(pm.mcpName);
     }
     const entry = makeEntry(
       existing ? `${pm.mcpName} (${pm.pluginName})` : pm.mcpName,

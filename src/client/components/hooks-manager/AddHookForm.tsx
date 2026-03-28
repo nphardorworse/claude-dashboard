@@ -69,9 +69,9 @@ export const AddHookForm = ({
 
       try {
         const timeout =
-          timeoutStr.trim() !== "" ? parseInt(timeoutStr, 10) : undefined;
+          timeoutStr.trim() !== "" ? Number(timeoutStr.trim()) : undefined;
 
-        if (timeout != null && isNaN(timeout)) {
+        if (timeout != null && (!Number.isInteger(timeout) || isNaN(timeout))) {
           setError("Timeout must be a valid number");
           setIsSubmitting(false);
           return;

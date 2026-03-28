@@ -1,17 +1,7 @@
 import { useCallback } from "react";
 import { XIcon } from "../shared/NavIcons";
 import { Card, CardContent } from "~/client/components/ui/card";
-
-type HookCommand = {
-  type: string;
-  command: string;
-  timeout?: number;
-};
-
-type HookEntry = {
-  matcher: string;
-  hooks: HookCommand[];
-};
+import type { HookCommand, HookEntry } from "../../../shared/types";
 
 type HookEventCardProps = {
   event: string;

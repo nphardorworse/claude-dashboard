@@ -5,17 +5,7 @@ import { PageShell } from "../layout/PageShell";
 import { ScopeBanner } from "../shared/ScopeBanner";
 import { HookEventCard } from "./HookEventCard";
 import { AddHookForm } from "./AddHookForm";
-
-type HookCommand = {
-  type: string;
-  command: string;
-  timeout?: number;
-};
-
-type HookEntry = {
-  matcher: string;
-  hooks: HookCommand[];
-};
+import type { HookEntry } from "../../../shared/types";
 
 type HooksResponse = {
   hooks: Record<string, HookEntry[]>;
@@ -216,6 +206,7 @@ export const HooksPage = ({ projectPath = null, onClearProject }: HooksPageProps
       );
       if (!confirmed) return;
 
+      setError(null);
       try {
         await deleteEvent(event, projectPath);
         await loadHooks();
@@ -231,6 +222,7 @@ export const HooksPage = ({ projectPath = null, onClearProject }: HooksPageProps
       const confirmed = window.confirm("Remove this hook?");
       if (!confirmed) return;
 
+      setError(null);
       try {
         // Re-fetch current state to avoid stale-closure race
         const freshData = await fetchHooks(projectPath);

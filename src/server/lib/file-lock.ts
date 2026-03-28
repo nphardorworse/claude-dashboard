@@ -13,11 +13,14 @@ export const withFileLock = async <T>(
   const next = new Promise<void>((resolve) => {
     release = resolve;
   });
-  locks.set(path, prev.then(() => next));
+  const chain = prev.then(() => next);
+  locks.set(path, chain);
   await prev;
   try {
     return await fn();
   } finally {
     release();
+    // Clean up if no other waiter queued behind us
+    if (locks.get(path) === chain) locks.delete(path);
   }
 };

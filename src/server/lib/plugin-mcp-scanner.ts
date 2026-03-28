@@ -1,4 +1,4 @@
-import { join } from "path";
+import { join, resolve } from "path";
 import { PATHS } from "./paths";
 import { readJsonFile } from "./file-io";
 import type { McpServerConfig } from "../../shared/types";
@@ -62,8 +62,12 @@ export const scanPluginMcps = async (): Promise<PluginMcp[]> => {
 
   for (const [pluginId, entries] of Object.entries(installed.plugins)) {
     if (!entries || entries.length === 0) continue;
-    const installPath = entries[0].installPath;
-    if (!installPath) continue;
+    const rawPath = entries[0].installPath;
+    if (!rawPath) continue;
+
+    // Defense-in-depth: ensure installPath resolves under the plugin cache
+    const installPath = resolve(rawPath);
+    if (!installPath.startsWith(PATHS.pluginCache + "/") && !installPath.startsWith(PATHS.claudeDir + "/")) continue;
 
     const mcpJsonPath = join(installPath, ".mcp.json");
     const raw = await readJsonFile<McpJsonFile>(mcpJsonPath);

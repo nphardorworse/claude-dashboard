@@ -4,6 +4,7 @@ import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
 import { withFileLock } from "../lib/file-lock";
 import { dirname } from "path";
 import { validateHookCommand, validateHookMatcher, validateHookTimeout } from "../lib/validation";
+import type { HookCommand, HookEntry, HooksMap } from "../../shared/types";
 
 const HOOK_EVENTS = [
   "SessionStart",
@@ -22,19 +23,6 @@ const HOOK_EVENTS = [
   "StopFailure",
   "SubagentStart",
 ] as const;
-
-type HookCommand = {
-  type: string;
-  command: string;
-  timeout?: number;
-};
-
-type HookEntry = {
-  matcher: string;
-  hooks: HookCommand[];
-};
-
-type HooksMap = Record<string, HookEntry[]>;
 
 type SettingsJson = {
   hooks?: HooksMap;
@@ -110,7 +98,8 @@ hooks.put("/", async (c) => {
       return c.json({ error: `Unknown hook event: "${event}"` }, 400);
     }
 
-    // Validate each entry's fields
+    // Validate each entry's fields and build clean entries from validated values
+    const cleanEntries: HookEntry[] = [];
     for (const entry of eventHooks) {
       const matcherCheck = validateHookMatcher(entry.matcher);
       if (!matcherCheck.valid) return c.json({ error: matcherCheck.error }, 400);
@@ -119,6 +108,7 @@ hooks.put("/", async (c) => {
         return c.json({ error: "Each entry must have a hooks array" }, 400);
       }
 
+      const cleanHooks: HookCommand[] = [];
       for (const hook of entry.hooks) {
         if (hook.type !== "command") {
           return c.json({ error: `Invalid hook type: "${hook.type}" (must be "command")` }, 400);
@@ -128,7 +118,12 @@ hooks.put("/", async (c) => {
 
         const timeoutCheck = validateHookTimeout(hook.timeout);
         if (!timeoutCheck.valid) return c.json({ error: timeoutCheck.error }, 400);
+
+        const cleanHook: HookCommand = { type: "command", command: cmdCheck.value };
+        if (timeoutCheck.value != null) cleanHook.timeout = timeoutCheck.value;
+        cleanHooks.push(cleanHook);
       }
+      cleanEntries.push({ matcher: matcherCheck.value, hooks: cleanHooks });
     }
 
     const projectPath = await getProjectPath(c);
@@ -141,10 +136,10 @@ hooks.put("/", async (c) => {
     return await withFileLock(settingsPath, async () => {
       const { settings, hooks: hooksMap } = await readHooks(settingsPath);
 
-      if (eventHooks.length === 0) {
+      if (cleanEntries.length === 0) {
         delete hooksMap[event];
       } else {
-        hooksMap[event] = eventHooks;
+        hooksMap[event] = cleanEntries;
       }
 
       settings.hooks = hooksMap;
