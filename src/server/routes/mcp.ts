@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { PATHS, getProjectPath, getMcpJsonPath } from "../lib/paths";
+import { PATHS, getProjectPath, getMcpJsonPath, validateProjectPath } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
 import { checkMcpHealth } from "../lib/mcp-health";
 import { withFileLock } from "../lib/file-lock";
@@ -9,6 +9,14 @@ import { dirname } from "path";
 import type { ClaudeJson, ProjectEntry } from "../lib/types";
 import type { McpOrigin, McpServerConfig } from "../../shared/types";
 import { validateMcpName, validateMcpCommand, validateMcpArgs, validateMcpEnv } from "../lib/validation";
+
+// Fix 2: Runtime validation constants for origin and action
+const VALID_ORIGINS = ["global", "global-disabled", "plugin", "project", "personal", "cloud"] as const;
+const VALID_ACTIONS = ["enable", "disable"] as const;
+
+// Fix 6: Rate limit tracking for health checks
+let lastHealthCheckTime = 0;
+const HEALTH_CHECK_MIN_INTERVAL_MS = 5_000;
 
 type DashboardConfig = {
   pinnedMcpServers?: string[];
@@ -24,6 +32,8 @@ mcp.get("/catalog", async (c) => {
     const catalog = await buildCatalog(projectPath ?? undefined);
     return c.json(catalog);
   } catch (err) {
+    console.error("[GET /catalog]", err);
+    if (err instanceof SyntaxError) return c.json({ error: "Invalid request body" }, 400);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
   }
@@ -86,6 +96,8 @@ mcp.post("/servers", async (c) => {
       return c.json({ ok: true, name: nameResult.value });
     });
   } catch (err) {
+    console.error("[POST /servers]", err);
+    if (err instanceof SyntaxError) return c.json({ error: "Invalid request body" }, 400);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
   }
@@ -117,6 +129,8 @@ mcp.delete("/servers/:name", async (c) => {
       return c.json({ ok: true, name });
     });
   } catch (err) {
+    console.error("[DELETE /servers/:name]", err);
+    if (err instanceof SyntaxError) return c.json({ error: "Invalid request body" }, 400);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
   }
@@ -136,53 +150,71 @@ mcp.put("/project-toggle", async (c) => {
       return c.json({ error: "projectPath, mcpName, origin, and action are required" }, 400);
     }
 
-    // Check pinned — pinned MCPs cannot be disabled
-    if (action === "disable") {
-      const dashConfig = await readJsonFile<DashboardConfig>(PATHS.dashboardConfig);
-      const pinnedSet = new Set(dashConfig?.pinnedMcpServers ?? []);
-      if (pinnedSet.has(mcpName)) {
-        return c.json({ error: `"${mcpName}" is pinned and cannot be disabled` }, 409);
-      }
+    // Fix 1: Validate body-sourced projectPath against allowlist
+    const validatedPath = await validateProjectPath(projectPath);
+    if (!validatedPath) {
+      return c.json({ error: "Invalid or unknown projectPath" }, 400);
     }
 
+    // Fix 3: Validate mcpName from body
+    const nameResult = validateMcpName(mcpName);
+    if (!nameResult.valid) return c.json({ error: nameResult.error }, 400);
+
+    // Fix 2: Runtime validation for origin and action
+    if (!(VALID_ORIGINS as readonly string[]).includes(origin)) {
+      return c.json({ error: `Invalid origin: "${origin}"` }, 400);
+    }
+    if (!(VALID_ACTIONS as readonly string[]).includes(action)) {
+      return c.json({ error: `Invalid action: "${action}"` }, 400);
+    }
+
+    // Fix 4: Pinned-list check moved inside withFileLock to prevent TOCTOU race
     return await withFileLock(PATHS.claudeJson, async () => {
+      if (action === "disable") {
+        const dashConfig = await readJsonFile<DashboardConfig>(PATHS.dashboardConfig);
+        const pinnedSet = new Set(dashConfig?.pinnedMcpServers ?? []);
+        if (pinnedSet.has(nameResult.value)) {
+          return c.json({ error: `"${nameResult.value}" is pinned and cannot be disabled` }, 409);
+        }
+      }
+
       const claudeJson = (await readJsonFile<ClaudeJson>(PATHS.claudeJson)) ?? {};
       const projects = claudeJson.projects ?? {};
-      const projEntry = (projects[projectPath] ?? {}) as ProjectEntry;
+      const projEntry = (projects[validatedPath] ?? {}) as ProjectEntry;
 
       if ((origin === "global" || origin === "cloud") && action === "disable") {
         const disabled = new Set(projEntry.disabledMcpServers ?? []);
-        disabled.add(mcpName);
+        disabled.add(nameResult.value);
         projEntry.disabledMcpServers = Array.from(disabled);
       } else if ((origin === "global" || origin === "cloud") && action === "enable") {
         projEntry.disabledMcpServers = (projEntry.disabledMcpServers ?? []).filter(
-          (n) => n !== mcpName
+          (n) => n !== nameResult.value
         );
       } else if (origin === "plugin" && action === "disable") {
         const disabled = new Set(projEntry.disabledMcpjsonServers ?? []);
-        disabled.add(mcpName);
+        disabled.add(nameResult.value);
         projEntry.disabledMcpjsonServers = Array.from(disabled);
       } else if (origin === "plugin" && action === "enable") {
         projEntry.disabledMcpjsonServers = (projEntry.disabledMcpjsonServers ?? []).filter(
-          (n) => n !== mcpName
+          (n) => n !== nameResult.value
         );
       } else if (origin === "personal" && action === "disable") {
         if (projEntry.mcpServers) {
-          delete projEntry.mcpServers[mcpName];
+          delete projEntry.mcpServers[nameResult.value];
         }
       } else if (origin === "global-disabled" && action === "enable") {
         const globalDisabled = claudeJson.disabledMcpServers ?? {};
-        const sourceConfig = globalDisabled[mcpName];
+        const sourceConfig = globalDisabled[nameResult.value];
         if (!sourceConfig) {
-          return c.json({ error: `"${mcpName}" not found in global disabled MCPs` }, 404);
+          return c.json({ error: `"${nameResult.value}" not found in global disabled MCPs` }, 404);
         }
         // Strip the "enabled: false" flag so Claude Code treats it as active
         delete (sourceConfig as Record<string, unknown>).enabled;
         // Move from disabled to active globally
         const globalActive = claudeJson.mcpServers ?? {};
-        globalActive[mcpName] = sourceConfig;
+        globalActive[nameResult.value] = sourceConfig;
         claudeJson.mcpServers = globalActive;
-        delete globalDisabled[mcpName];
+        delete globalDisabled[nameResult.value];
         claudeJson.disabledMcpServers = globalDisabled;
       } else {
         return c.json(
@@ -191,13 +223,15 @@ mcp.put("/project-toggle", async (c) => {
         );
       }
 
-      projects[projectPath] = projEntry;
+      projects[validatedPath] = projEntry;
       claudeJson.projects = projects;
       await writeJsonFile(PATHS.claudeJson, claudeJson);
 
-      return c.json({ ok: true, mcpName, action });
+      return c.json({ ok: true, mcpName: nameResult.value, action });
     });
   } catch (err) {
+    console.error("[PUT /project-toggle]", err);
+    if (err instanceof SyntaxError) return c.json({ error: "Invalid request body" }, 400);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
   }
@@ -215,6 +249,16 @@ mcp.post("/copy-to-project", async (c) => {
       return c.json({ error: "mcpName and targetProjectPath are required" }, 400);
     }
 
+    // Fix 1: Validate body-sourced targetProjectPath against allowlist
+    const validatedPath = await validateProjectPath(targetProjectPath);
+    if (!validatedPath) {
+      return c.json({ error: "Invalid or unknown targetProjectPath" }, 400);
+    }
+
+    // Fix 3: Validate mcpName from body
+    const nameResult = validateMcpName(mcpName);
+    if (!nameResult.valid) return c.json({ error: nameResult.error }, 400);
+
     // Pre-fetch cached plugin MCPs outside the lock (cheap, cached)
     const pluginMcps = await scanPluginMcps();
 
@@ -225,50 +269,52 @@ mcp.post("/copy-to-project", async (c) => {
       let foundConfig: McpServerConfig | null = null;
 
       // Check global active
-      if (claudeJson.mcpServers?.[mcpName]) {
-        foundConfig = claudeJson.mcpServers[mcpName];
+      if (claudeJson.mcpServers?.[nameResult.value]) {
+        foundConfig = claudeJson.mcpServers[nameResult.value];
       }
       // Check global disabled
-      if (!foundConfig && claudeJson.disabledMcpServers?.[mcpName]) {
-        foundConfig = claudeJson.disabledMcpServers[mcpName];
+      if (!foundConfig && claudeJson.disabledMcpServers?.[nameResult.value]) {
+        foundConfig = claudeJson.disabledMcpServers[nameResult.value];
       }
       // Check personal MCPs only in the target project (not across all projects)
       if (!foundConfig && claudeJson.projects) {
-        const pe = (claudeJson.projects[targetProjectPath] ?? {}) as ProjectEntry;
-        if (pe.mcpServers?.[mcpName]) {
-          foundConfig = pe.mcpServers[mcpName];
+        const pe = (claudeJson.projects[validatedPath] ?? {}) as ProjectEntry;
+        if (pe.mcpServers?.[nameResult.value]) {
+          foundConfig = pe.mcpServers[nameResult.value];
         }
       }
       // Check plugin MCPs
       if (!foundConfig) {
-        const pluginMatch = pluginMcps.find((pm) => pm.mcpName === mcpName);
+        const pluginMatch = pluginMcps.find((pm) => pm.mcpName === nameResult.value);
         if (pluginMatch) foundConfig = pluginMatch.config;
       }
 
       if (!foundConfig) {
-        return c.json({ error: `MCP "${mcpName}" not found in catalog` }, 404);
+        return c.json({ error: `MCP "${nameResult.value}" not found in catalog` }, 404);
       }
 
       if (!foundConfig.command && !foundConfig.url) {
         return c.json(
-          { error: `MCP "${mcpName}" has no command or url — cannot copy cloud MCPs` },
+          { error: `MCP "${nameResult.value}" has no command or url — cannot copy cloud MCPs` },
           400
         );
       }
 
       const projects = claudeJson.projects ?? {};
-      const projEntry = (projects[targetProjectPath] ?? {}) as ProjectEntry;
+      const projEntry = (projects[validatedPath] ?? {}) as ProjectEntry;
 
       projEntry.mcpServers = projEntry.mcpServers ?? {};
-      projEntry.mcpServers[mcpName] = foundConfig;
+      projEntry.mcpServers[nameResult.value] = foundConfig;
 
-      projects[targetProjectPath] = projEntry;
+      projects[validatedPath] = projEntry;
       claudeJson.projects = projects;
       await writeJsonFile(PATHS.claudeJson, claudeJson);
 
-      return c.json({ ok: true, mcpName, targetProjectPath });
+      return c.json({ ok: true, mcpName: nameResult.value, targetProjectPath: validatedPath });
     });
   } catch (err) {
+    console.error("[POST /copy-to-project]", err);
+    if (err instanceof SyntaxError) return c.json({ error: "Invalid request body" }, 400);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
   }
@@ -283,6 +329,14 @@ mcp.put("/pinned", async (c) => {
       return c.json({ error: "servers array required" }, 400);
     }
 
+    // Fix 5: Validate each item in the servers array
+    for (const item of servers) {
+      const result = validateMcpName(item);
+      if (!result.valid) {
+        return c.json({ error: `Invalid server name in pinned list: ${result.error}` }, 400);
+      }
+    }
+
     return await withFileLock(PATHS.dashboardConfig, async () => {
       const config = (await readJsonFile<DashboardConfig>(PATHS.dashboardConfig)) ?? {};
       config.pinnedMcpServers = servers;
@@ -290,6 +344,8 @@ mcp.put("/pinned", async (c) => {
       return c.json({ ok: true, pinned: servers.length });
     });
   } catch (err) {
+    console.error("[PUT /pinned]", err);
+    if (err instanceof SyntaxError) return c.json({ error: "Invalid request body" }, 400);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
   }
@@ -307,44 +363,56 @@ mcp.put("/global-toggle", async (c) => {
       return c.json({ error: "mcpName and action required" }, 400);
     }
 
-    if (action === "disable") {
-      const dashConfig = await readJsonFile<DashboardConfig>(PATHS.dashboardConfig);
-      const pinnedSet = new Set(dashConfig?.pinnedMcpServers ?? []);
-      if (pinnedSet.has(mcpName)) {
-        return c.json({ error: `"${mcpName}" is pinned and cannot be disabled` }, 409);
-      }
+    // Fix 3: Validate mcpName from body
+    const nameResult = validateMcpName(mcpName);
+    if (!nameResult.valid) return c.json({ error: nameResult.error }, 400);
+
+    // Fix 2: Runtime validation for action
+    if (!(VALID_ACTIONS as readonly string[]).includes(action)) {
+      return c.json({ error: `Invalid action: "${action}"` }, 400);
     }
 
+    // Fix 4: Pinned-list check moved inside withFileLock to prevent TOCTOU race
     return await withFileLock(PATHS.claudeJson, async () => {
+      if (action === "disable") {
+        const dashConfig = await readJsonFile<DashboardConfig>(PATHS.dashboardConfig);
+        const pinnedSet = new Set(dashConfig?.pinnedMcpServers ?? []);
+        if (pinnedSet.has(nameResult.value)) {
+          return c.json({ error: `"${nameResult.value}" is pinned and cannot be disabled` }, 409);
+        }
+      }
+
       const claudeJson = (await readJsonFile<ClaudeJson>(PATHS.claudeJson)) ?? {};
       const active = claudeJson.mcpServers ?? {};
       const disabled = claudeJson.disabledMcpServers ?? {};
 
       if (action === "disable") {
-        const config = active[mcpName];
+        const config = active[nameResult.value];
         if (!config) {
-          return c.json({ error: `"${mcpName}" not found in active global MCPs` }, 404);
+          return c.json({ error: `"${nameResult.value}" not found in active global MCPs` }, 404);
         }
-        disabled[mcpName] = config;
-        delete active[mcpName];
+        disabled[nameResult.value] = config;
+        delete active[nameResult.value];
       } else {
-        const config = disabled[mcpName];
+        const config = disabled[nameResult.value];
         if (!config) {
-          return c.json({ error: `"${mcpName}" not found in disabled global MCPs` }, 404);
+          return c.json({ error: `"${nameResult.value}" not found in disabled global MCPs` }, 404);
         }
         // Strip the "enabled: false" flag so Claude Code treats it as active
         delete (config as Record<string, unknown>).enabled;
-        active[mcpName] = config;
-        delete disabled[mcpName];
+        active[nameResult.value] = config;
+        delete disabled[nameResult.value];
       }
 
       claudeJson.mcpServers = active;
       claudeJson.disabledMcpServers = disabled;
       await writeJsonFile(PATHS.claudeJson, claudeJson);
 
-      return c.json({ ok: true, mcpName, action });
+      return c.json({ ok: true, mcpName: nameResult.value, action });
     });
   } catch (err) {
+    console.error("[PUT /global-toggle]", err);
+    if (err instanceof SyntaxError) return c.json({ error: "Invalid request body" }, 400);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
   }
@@ -353,9 +421,17 @@ mcp.put("/global-toggle", async (c) => {
 // POST /health-check — run a fresh health check
 mcp.post("/health-check", async (c) => {
   try {
-    const healthResults = await checkMcpHealth(true);
+    // Fix 6: Rate limit — if last non-cached check was within minimum interval, use cache
+    const now = Date.now();
+    const bypassCache = now - lastHealthCheckTime >= HEALTH_CHECK_MIN_INTERVAL_MS;
+    if (bypassCache) {
+      lastHealthCheckTime = now;
+    }
+    const healthResults = await checkMcpHealth(bypassCache);
     return c.json({ results: healthResults });
   } catch (err) {
+    console.error("[POST /health-check]", err);
+    if (err instanceof SyntaxError) return c.json({ error: "Invalid request body" }, 400);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
   }

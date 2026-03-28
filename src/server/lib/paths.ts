@@ -25,7 +25,13 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
     for (const path of Object.keys(data.projects ?? {})) {
       projects.add(path);
     }
-  } catch { /* .claude.json may not exist */ }
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      // Expected: file/dir doesn't exist
+    } else {
+      console.warn("[paths] Unexpected error loading known projects:", err);
+    }
+  }
 
   // Source 2: session-meta files (sample recent ones)
   try {
@@ -41,7 +47,13 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
         } catch { /* skip */ }
       })
     );
-  } catch { /* session-meta dir may not exist */ }
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      // Expected: file/dir doesn't exist
+    } else {
+      console.warn("[paths] Unexpected error loading known projects:", err);
+    }
+  }
 
   // Source 3: ~/.claude/projects/ dirs (read cwd from first JSONL)
   try {
@@ -65,14 +77,20 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
         }
       } catch { continue; }
     }
-  } catch { /* projects dir may not exist */ }
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      // Expected: file/dir doesn't exist
+    } else {
+      console.warn("[paths] Unexpected error loading known projects:", err);
+    }
+  }
 
   knownProjectsCache = projects;
   knownProjectsCacheTime = now;
   return projects;
 };
 
-const validateProjectPath = async (decoded: string): Promise<string | undefined> => {
+export const validateProjectPath = async (decoded: string): Promise<string | undefined> => {
   // Must be absolute
   if (!decoded.startsWith("/")) return undefined;
   // Resolve to catch .. traversal

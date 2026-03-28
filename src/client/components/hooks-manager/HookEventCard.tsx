@@ -16,28 +16,30 @@ type HookEntry = {
 type HookEventCardProps = {
   event: string;
   hookEntries: HookEntry[];
-  onDelete: () => void;
-  onRemoveEntry: (entryIndex: number, hookIndex: number) => void;
+  onDelete: (event: string) => void;
+  onRemoveEntry: (event: string, entryIndex: number, hookIndex: number) => void;
 };
 
 type HookCommandRowProps = {
   matcher: string;
   hook: HookCommand;
+  event: string;
   entryIndex: number;
   hookIndex: number;
-  onRemove: (entryIndex: number, hookIndex: number) => void;
+  onRemove: (event: string, entryIndex: number, hookIndex: number) => void;
 };
 
 const HookCommandRow = ({
   matcher,
   hook,
+  event,
   entryIndex,
   hookIndex,
   onRemove,
 }: HookCommandRowProps) => {
   const handleRemove = useCallback(() => {
-    onRemove(entryIndex, hookIndex);
-  }, [onRemove, entryIndex, hookIndex]);
+    onRemove(event, entryIndex, hookIndex);
+  }, [onRemove, event, entryIndex, hookIndex]);
 
   return (
     <div className="flex items-start justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[var(--overlay-subtle)] px-3 py-2">
@@ -79,6 +81,10 @@ export const HookEventCard = ({
   onDelete,
   onRemoveEntry,
 }: HookEventCardProps) => {
+  const handleDelete = useCallback(() => {
+    onDelete(event);
+  }, [onDelete, event]);
+
   const allHooks: Array<{
     matcher: string;
     hook: HookCommand;
@@ -101,7 +107,7 @@ export const HookEventCard = ({
         <h3 className="text-sm font-semibold text-zinc-100">{event}</h3>
         {hasHooks && (
           <button
-            onClick={onDelete}
+            onClick={handleDelete}
             className="rounded px-2 py-1 text-xs text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-400"
           >
             Remove All
@@ -116,6 +122,7 @@ export const HookEventCard = ({
               key={`${item.entryIndex}-${item.hookIndex}-${item.matcher}`}
               matcher={item.matcher}
               hook={item.hook}
+              event={event}
               entryIndex={item.entryIndex}
               hookIndex={item.hookIndex}
               onRemove={onRemoveEntry}

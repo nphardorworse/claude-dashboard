@@ -15,7 +15,7 @@ export const readJsonFile = async <T = unknown>(
       return null;
     }
     if (err instanceof SyntaxError) {
-      // Malformed JSON — treat as empty
+      console.warn(`[file-io] Malformed JSON in ${path}: ${err.message}. Treating as empty.`);
       return null;
     }
     throw err;
@@ -29,9 +29,12 @@ export const ensureDir = async (dirPath: string): Promise<void> => {
 export const createBackup = async (filePath: string): Promise<void> => {
   try {
     await readFile(filePath);
-  } catch {
-    // File doesn't exist yet — nothing to back up
-    return;
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      return; // File doesn't exist, nothing to back up
+    }
+    console.error(`[file-io] Failed to read ${filePath} for backup:`, err);
+    throw err;
   }
 
   await ensureDir(PATHS.backupsDir);

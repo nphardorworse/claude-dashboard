@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getProjectPath, getSettingsPath } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
+import { withFileLock } from "../lib/file-lock";
 import { dirname } from "path";
 import { validateHookCommand, validateHookMatcher, validateHookTimeout } from "../lib/validation";
 
@@ -82,6 +83,7 @@ hooks.get("/", async (c) => {
       scope: projectPath ? "project" : "global",
     });
   } catch (err) {
+    console.error("GET /hooks error:", err);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
   }
@@ -136,19 +138,25 @@ hooks.put("/", async (c) => {
       await ensureDir(dirname(settingsPath));
     }
 
-    const { settings, hooks: hooksMap } = await readHooks(settingsPath);
+    return await withFileLock(settingsPath, async () => {
+      const { settings, hooks: hooksMap } = await readHooks(settingsPath);
 
-    if (eventHooks.length === 0) {
-      delete hooksMap[event];
-    } else {
-      hooksMap[event] = eventHooks;
-    }
+      if (eventHooks.length === 0) {
+        delete hooksMap[event];
+      } else {
+        hooksMap[event] = eventHooks;
+      }
 
-    settings.hooks = hooksMap;
-    await writeJsonFile(settingsPath, settings);
+      settings.hooks = hooksMap;
+      await writeJsonFile(settingsPath, settings);
 
-    return c.json({ ok: true });
+      return c.json({ ok: true });
+    });
   } catch (err) {
+    if (err instanceof SyntaxError) {
+      return c.json({ error: "Invalid JSON in request body" }, 400);
+    }
+    console.error("PUT /hooks error:", err);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
   }
@@ -170,18 +178,21 @@ hooks.delete("/:event", async (c) => {
       await ensureDir(dirname(settingsPath));
     }
 
-    const { settings, hooks: hooksMap } = await readHooks(settingsPath);
+    return await withFileLock(settingsPath, async () => {
+      const { settings, hooks: hooksMap } = await readHooks(settingsPath);
 
-    if (!hooksMap[event]) {
-      return c.json({ error: `No hooks found for event "${event}"` }, 404);
-    }
+      if (!hooksMap[event]) {
+        return c.json({ error: `No hooks found for event "${event}"` }, 404);
+      }
 
-    delete hooksMap[event];
-    settings.hooks = hooksMap;
-    await writeJsonFile(settingsPath, settings);
+      delete hooksMap[event];
+      settings.hooks = hooksMap;
+      await writeJsonFile(settingsPath, settings);
 
-    return c.json({ ok: true });
+      return c.json({ ok: true });
+    });
   } catch (err) {
+    console.error("DELETE /hooks/:event error:", err);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
   }
@@ -223,29 +234,35 @@ hooks.post("/add", async (c) => {
       await ensureDir(dirname(settingsPath));
     }
 
-    const { settings, hooks: hooksMap } = await readHooks(settingsPath);
+    return await withFileLock(settingsPath, async () => {
+      const { settings, hooks: hooksMap } = await readHooks(settingsPath);
 
-    const newHookCommand: HookCommand = { type: "command", command: cmdResult.value };
-    if (timeoutResult.value != null) {
-      newHookCommand.timeout = timeoutResult.value;
-    }
+      const newHookCommand: HookCommand = { type: "command", command: cmdResult.value };
+      if (timeoutResult.value != null) {
+        newHookCommand.timeout = timeoutResult.value;
+      }
 
-    const eventHooks = hooksMap[event] ?? [];
+      const eventHooks = hooksMap[event] ?? [];
 
-    // Find an existing entry with the same matcher, or create a new one
-    const existingEntry = eventHooks.find((e) => e.matcher === matcherResult.value);
-    if (existingEntry) {
-      existingEntry.hooks.push(newHookCommand);
-    } else {
-      eventHooks.push({ matcher: matcherResult.value, hooks: [newHookCommand] });
-    }
+      // Find an existing entry with the same matcher, or create a new one
+      const existingEntry = eventHooks.find((e) => e.matcher === matcherResult.value);
+      if (existingEntry) {
+        existingEntry.hooks.push(newHookCommand);
+      } else {
+        eventHooks.push({ matcher: matcherResult.value, hooks: [newHookCommand] });
+      }
 
-    hooksMap[event] = eventHooks;
-    settings.hooks = hooksMap;
-    await writeJsonFile(settingsPath, settings);
+      hooksMap[event] = eventHooks;
+      settings.hooks = hooksMap;
+      await writeJsonFile(settingsPath, settings);
 
-    return c.json({ ok: true });
+      return c.json({ ok: true });
+    });
   } catch (err) {
+    if (err instanceof SyntaxError) {
+      return c.json({ error: "Invalid JSON in request body" }, 400);
+    }
+    console.error("POST /hooks/add error:", err);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
   }

@@ -460,9 +460,7 @@ export const McpPage = ({ projectPath = null, onClearProject }: McpPageProps) =>
 
   useEffect(() => {
     setIsLoading(true);
-    loadCatalog()
-      .then(() => setIsLoading(false))
-      .catch(() => setIsLoading(false));
+    loadCatalog().finally(() => setIsLoading(false));
   }, [loadCatalog]);
 
   // ------ action handlers ------

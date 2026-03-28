@@ -335,10 +335,8 @@ export const HooksPage = ({ projectPath = null, onClearProject }: HooksPageProps
                   key={event}
                   event={event}
                   hookEntries={hooksData.hooks[event]}
-                  onDelete={() => handleDeleteEvent(event)}
-                  onRemoveEntry={(entryIndex, hookIndex) =>
-                    handleRemoveEntry(event, entryIndex, hookIndex)
-                  }
+                  onDelete={handleDeleteEvent}
+                  onRemoveEntry={handleRemoveEntry}
                 />
               ))}
             </div>

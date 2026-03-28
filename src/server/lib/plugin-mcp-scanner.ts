@@ -48,7 +48,11 @@ export const scanPluginMcps = async (): Promise<PluginMcp[]> => {
   }
 
   const installed = await readJsonFile<InstalledPlugins>(PATHS.installedPlugins);
-  if (!installed?.plugins) {
+  if (!installed) {
+    // Transient read failure — preserve existing cache
+    return pluginMcpCache ?? [];
+  }
+  if (!installed.plugins) {
     pluginMcpCache = [];
     pluginMcpCacheTime = now;
     return [];
