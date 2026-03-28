@@ -3,7 +3,7 @@ import { basename, join, resolve } from "path";
 import { access } from "fs/promises";
 import { PATHS, loadKnownProjects } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
-import { validatePermissions } from "../lib/validation";
+import { validatePermissions, validateHookEntries, validateHooksMap } from "../lib/validation";
 
 type ModelUsageEntry = {
   inputTokens?: number;
@@ -191,6 +191,11 @@ projects.put("/:projectPath/settings", async (c) => {
       return c.json({ error: "Invalid request: settings object required" }, 400);
     }
 
+    if (body.settings.hooks !== undefined) {
+      const hooksCheck = validateHooksMap(body.settings.hooks);
+      if (!hooksCheck.valid) return c.json({ error: hooksCheck.error }, 400);
+    }
+
     await ensureDir(paths.claudeDir);
     await writeJsonFile(paths.settings, body.settings);
 
@@ -212,6 +217,11 @@ projects.put("/:projectPath/local-settings", async (c) => {
 
     if (!body.settings || typeof body.settings !== "object") {
       return c.json({ error: "Invalid request: settings object required" }, 400);
+    }
+
+    if (body.settings.hooks !== undefined) {
+      const hooksCheck = validateHooksMap(body.settings.hooks);
+      if (!hooksCheck.valid) return c.json({ error: hooksCheck.error }, 400);
     }
 
     await ensureDir(paths.claudeDir);
@@ -249,6 +259,9 @@ projects.put("/:projectPath/hooks", async (c) => {
     const settings =
       (await readJsonFile<SettingsJson>(paths.settings)) ?? {};
     const hooksMap = settings.hooks ?? {};
+
+    const entriesCheck = validateHookEntries(eventHooks);
+    if (!entriesCheck.valid) return c.json({ error: entriesCheck.error }, 400);
 
     if (eventHooks.length === 0) {
       delete hooksMap[event];

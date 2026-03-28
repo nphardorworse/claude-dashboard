@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { PATHS } from "../lib/paths";
 import { readJsonFile, writeJsonFile } from "../lib/file-io";
-import { validatePermissions, isPlainObject } from "../lib/validation";
+import { validatePermissions, validateHooksMap, isPlainObject } from "../lib/validation";
 
 const config = new Hono();
 
@@ -22,6 +22,10 @@ config.put("/global-settings", async (c) => {
     const body = await c.req.json();
     if (!isPlainObject(body)) {
       return c.json({ error: "Body must be a JSON object" }, 400);
+    }
+    if (body.hooks !== undefined) {
+      const hooksCheck = validateHooksMap(body.hooks);
+      if (!hooksCheck.valid) return c.json({ error: hooksCheck.error }, 400);
     }
     await writeJsonFile(PATHS.globalSettings, body);
     return c.json({ ok: true });
@@ -48,6 +52,10 @@ config.put("/global-local", async (c) => {
     const body = await c.req.json();
     if (!isPlainObject(body)) {
       return c.json({ error: "Body must be a JSON object" }, 400);
+    }
+    if (body.hooks !== undefined) {
+      const hooksCheck = validateHooksMap(body.hooks);
+      if (!hooksCheck.valid) return c.json({ error: hooksCheck.error }, 400);
     }
     await writeJsonFile(PATHS.globalLocalSettings, body);
     return c.json({ ok: true });

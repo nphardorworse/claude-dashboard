@@ -37,6 +37,12 @@ defaults.put("/profile", async (c) => {
   try {
     const { profileName } = await c.req.json<{ profileName: string | null }>();
 
+    if (profileName !== null && profileName !== undefined) {
+      if (typeof profileName !== "string" || !/^[a-zA-Z0-9_-]+$/.test(profileName)) {
+        return c.json({ error: "Invalid profile name" }, 400);
+      }
+    }
+
     return await withFileLock(PATHS.dashboardConfig, async () => {
       const config = await readConfig();
       config.defaultProfile = profileName ?? undefined;
@@ -116,9 +122,15 @@ defaults.put("/context-window", async (c) => {
   try {
     const { contextWindowSize } = await c.req.json<{ contextWindowSize: number | null }>();
 
+    if (contextWindowSize !== null && contextWindowSize !== undefined) {
+      if (typeof contextWindowSize !== "number" || !Number.isFinite(contextWindowSize) || contextWindowSize <= 0 || contextWindowSize > 2_000_000) {
+        return c.json({ error: "contextWindowSize must be a positive number up to 2,000,000 or null" }, 400);
+      }
+    }
+
     return await withFileLock(PATHS.dashboardConfig, async () => {
       const config = await readConfig();
-      config.contextWindowSize = contextWindowSize;
+      config.contextWindowSize = contextWindowSize ?? undefined;
       await writeJsonFile(PATHS.dashboardConfig, config);
       return c.json({ ok: true });
     });

@@ -694,6 +694,7 @@ export const SessionHistory = ({
 }: SessionHistoryProps) => {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(
     null
   );
@@ -707,13 +708,17 @@ export const SessionHistory = ({
 
   const loadSessions = useCallback(async () => {
     try {
+      setFetchError(null);
       const url = buildScopedUrl("/api/sessions", projectPath);
       const res = await fetch(url);
-      if (!res.ok) return;
+      if (!res.ok) {
+        setFetchError(`Failed to load sessions (HTTP ${res.status})`);
+        return;
+      }
       const data: SessionsResponse = await res.json();
       setSessions(data.sessions);
     } catch {
-      // Silent fail
+      setFetchError("Failed to load sessions. Check server connection.");
     } finally {
       setIsLoading(false);
     }
@@ -808,6 +813,19 @@ export const SessionHistory = ({
   // ── Render ──
 
   if (isLoading) return null;
+
+  if (fetchError) {
+    return (
+      <Card>
+      <CardContent className="p-4">
+        <h3 className="text-sm font-semibold text-zinc-100">
+          Session History
+        </h3>
+        <p className="mt-2 text-xs text-red-400">{fetchError}</p>
+      </CardContent>
+      </Card>
+    );
+  }
 
   if (sessions.length === 0) {
     return (

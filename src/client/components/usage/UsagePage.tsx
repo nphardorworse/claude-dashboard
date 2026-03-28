@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
+import { useToast } from "../shared/use-toast";
 import { PageShell } from "../layout/PageShell";
 import { useWindowedUsage } from "../../hooks/use-windowed-usage";
 import { usePlanLimits } from "../../hooks/use-plan-limits";
@@ -17,13 +18,14 @@ export const UsagePage = ({
   projectPath: _projectPath,
   onClearProject: _onClearProject,
 }: UsagePageProps) => {
-  const { data, isLoading: usageLoading, refetch } = useWindowedUsage();
+  const { toast } = useToast();
+  const { data, isLoading: usageLoading, error: usageError, refetch } = useWindowedUsage();
   const { limits, saveLimits, isLoading: limitsLoading } = usePlanLimits();
   const [contextWindow, setContextWindow] =
     useState<ContextWindowResponse | null>(null);
 
   useEffect(() => {
-    fetch("http://localhost:3847/api/defaults/context-window")
+    fetch("/api/defaults/context-window")
       .then((r) => r.json())
       .then(setContextWindow)
       .catch(() => {});
@@ -38,21 +40,31 @@ export const UsagePage = ({
   );
 
   const handleSaveContextWindow = useCallback(async (size: number | null) => {
-    await apiFetch("http://localhost:3847/api/defaults/context-window", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contextWindowSize: size }),
-    });
-    const res = await fetch(
-      "http://localhost:3847/api/defaults/context-window",
-    );
-    setContextWindow(await res.json());
-  }, []);
+    try {
+      await apiFetch("/api/defaults/context-window", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contextWindowSize: size }),
+      });
+      const res = await fetch("/api/defaults/context-window");
+      setContextWindow(await res.json());
+    } catch {
+      toast("Failed to save context window setting", "error");
+    }
+  }, [toast]);
 
-  if (usageLoading || !data) {
+  if (usageLoading) {
     return (
       <PageShell title="Plan Usage">
         <p className="text-[13px] text-zinc-500">Loading usage data...</p>
+      </PageShell>
+    );
+  }
+
+  if (usageError || !data) {
+    return (
+      <PageShell title="Plan Usage">
+        <p className="text-[13px] text-red-400">{usageError ?? "Failed to load usage data"}</p>
       </PageShell>
     );
   }

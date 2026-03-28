@@ -6,6 +6,7 @@ const POLL_INTERVAL_MS = 30_000;
 export const useWindowedUsage = () => {
   const [data, setData] = useState<WindowedUsageResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchWindowed = useCallback(async () => {
@@ -14,8 +15,9 @@ export const useWindowedUsage = () => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: WindowedUsageResponse = await res.json();
       setData(json);
-    } catch {
-      // Silent fail — widget still works without windowed data
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load usage data");
     } finally {
       setIsLoading(false);
     }
@@ -29,5 +31,5 @@ export const useWindowedUsage = () => {
     };
   }, [fetchWindowed]);
 
-  return { data, isLoading, refetch: fetchWindowed };
+  return { data, isLoading, error, refetch: fetchWindowed };
 };

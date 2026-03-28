@@ -6,6 +6,7 @@ import { readJsonFile, writeJsonFile, ensureDir, createBackup } from "../lib/fil
 import { withFileLock } from "../lib/file-lock";
 import { scanPlugins } from "../lib/plugin-scanner";
 import { scanSkills } from "../lib/skill-scanner";
+import { validateHooksMap } from "../lib/validation";
 import type { HooksMap, ProfileEntry } from "../../shared/types";
 import type { ClaudeJson, ProjectEntry } from "../lib/types";
 
@@ -143,6 +144,10 @@ const validateProfileBody = (body: {
   if (body.disabledMcpServers !== undefined && !isStringArray(body.disabledMcpServers)) {
     return "disabledMcpServers must be a string array";
   }
+  if (body.hooks !== undefined) {
+    const hooksCheck = validateHooksMap(body.hooks);
+    if (!hooksCheck.valid) return hooksCheck.error;
+  }
   return null;
 };
 
@@ -275,6 +280,9 @@ profiles.post("/switch", async (c) => {
       await ensureDir(dirname(settingsPath));
     }
 
+    // Save original settings for rollback if MCP write (step 2) fails
+    const originalSettings = await readJsonFile<SettingsFile>(settingsPath);
+
     // Step 1: Write plugins + skills + hooks to settings.json (locked)
     await withFileLock(settingsPath, async () => {
       const settings = (await readJsonFile<SettingsFile>(settingsPath)) ?? {};
@@ -372,6 +380,12 @@ profiles.post("/switch", async (c) => {
         }
 
         await writeJsonFile(PATHS.claudeJson, claudeJson);
+      }).catch(async (mcpErr: unknown) => {
+        // Rollback step 1 to avoid inconsistent state
+        await withFileLock(settingsPath, async () => {
+          await writeJsonFile(settingsPath, originalSettings ?? {});
+        });
+        throw mcpErr;
       });
     }
 

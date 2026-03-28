@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { SkillInfo, SkillsResponse } from "../../../shared/types";
 import { apiFetch, buildScopedUrl, getProjectDisplayName } from "../../lib/api";
+import { useToast } from "../shared/use-toast";
 import { PageShell } from "../layout/PageShell";
 import { ScopeBanner } from "../shared/ScopeBanner";
 import { CategoryFilter, type CategoryItem } from "../plugins/CategoryFilter";
@@ -123,9 +124,8 @@ type SkillsPageProps = {
 };
 
 export const SkillsPage = ({ projectPath = null, onClearProject }: SkillsPageProps) => {
+  const { toast } = useToast();
   const [skills, setSkills] = useState<SkillInfo[]>([]);
-  const [activeCount, setActiveCount] = useState(0);
-  const [totalEstimatedTokens, setTotalEstimatedTokens] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState("All");
@@ -133,13 +133,17 @@ export const SkillsPage = ({ projectPath = null, onClearProject }: SkillsPagePro
   const [searchQuery, setSearchQuery] = useState("");
   const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
 
+  const activeCount = useMemo(() => skills.filter((s) => s.enabled).length, [skills]);
+  const totalEstimatedTokens = useMemo(
+    () => skills.filter((s) => s.enabled).reduce((sum, s) => sum + s.estimatedTokens, 0),
+    [skills]
+  );
+
   const loadSkills = useCallback(async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
       const data = await fetchSkills(projectPath);
       setSkills(data.skills);
-      setActiveCount(data.activeCount);
-      setTotalEstimatedTokens(data.totalEstimatedTokens);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -156,25 +160,18 @@ export const SkillsPage = ({ projectPath = null, onClearProject }: SkillsPagePro
     async (skillId: string, enabled: boolean) => {
       setTogglingIds((prev) => new Set([...prev, skillId]));
 
-      setSkills((prev) => {
-        const skill = prev.find((s) => s.id === skillId);
-        const tokenDelta = skill
-          ? enabled ? skill.estimatedTokens : -skill.estimatedTokens
-          : 0;
-        setActiveCount((c) => c + (enabled ? 1 : -1));
-        setTotalEstimatedTokens((t) => t + tokenDelta);
-
-        return prev.map((s) =>
+      setSkills((prev) =>
+        prev.map((s) =>
           s.id === skillId
             ? { ...s, enabled, enableSource: "project" as const }
             : s
-        );
-      });
+        )
+      );
 
       try {
         await toggleSkill(skillId, enabled, projectPath);
       } catch (err) {
-        console.error("Toggle failed:", err);
+        toast(err instanceof Error ? err.message : "Toggle failed", "error");
         await loadSkills(false);
       } finally {
         setTogglingIds((prev) => {
@@ -184,7 +181,7 @@ export const SkillsPage = ({ projectPath = null, onClearProject }: SkillsPagePro
         });
       }
     },
-    [projectPath, loadSkills]
+    [projectPath, loadSkills, toast]
   );
 
   const categories = useMemo((): CategoryItem[] => {

@@ -306,7 +306,7 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
     } catch {
       toast("Failed to snapshot current settings. Check server connection.", "error");
     }
-  }, [projectPath]);
+  }, [projectPath, toast]);
 
   const handleOpenEdit = useCallback((profile: ProfileEntry) => {
     setEditor({ kind: "edit", profile });
@@ -377,7 +377,7 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
   return (
     <PageShell title={pageTitle}>
       <div className="flex flex-col gap-6">
-        <ScopeBanner projectPath={projectPath} configType="plugins" onClear={onClearProject} />
+        <ScopeBanner projectPath={projectPath} onClear={onClearProject} />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <ActiveSummary

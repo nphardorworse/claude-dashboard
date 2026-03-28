@@ -168,6 +168,82 @@ export const validateHookTimeout = (
   return { valid: true, value: timeout };
 };
 
+// ── Hook map validation ─────────────────────────────────────
+
+export const validateHookEntries = (
+  entries: unknown
+): { valid: true } | { valid: false; error: string } => {
+  if (!Array.isArray(entries)) {
+    return { valid: false, error: "Hook entries must be an array" };
+  }
+  for (const entry of entries) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      return { valid: false, error: "Each hook entry must be an object" };
+    }
+    const e = entry as Record<string, unknown>;
+    if (e.matcher !== undefined) {
+      const matcherCheck = validateHookMatcher(e.matcher);
+      if (!matcherCheck.valid) return matcherCheck;
+    }
+    if (!Array.isArray(e.hooks)) {
+      return { valid: false, error: "Each entry must have a hooks array" };
+    }
+    for (const hook of e.hooks as unknown[]) {
+      if (typeof hook !== "object" || hook === null) {
+        return { valid: false, error: "Each hook command must be an object" };
+      }
+      const h = hook as Record<string, unknown>;
+      if (h.type !== "command") {
+        return { valid: false, error: `Invalid hook type (must be "command")` };
+      }
+      const cmdCheck = validateHookCommand(h.command);
+      if (!cmdCheck.valid) return cmdCheck;
+      if (h.timeout !== undefined) {
+        const timeoutCheck = validateHookTimeout(h.timeout);
+        if (!timeoutCheck.valid) return timeoutCheck;
+      }
+    }
+  }
+  return { valid: true };
+};
+
+export const validateHooksMap = (
+  hooks: unknown
+): { valid: true } | { valid: false; error: string } => {
+  if (typeof hooks !== "object" || hooks === null || Array.isArray(hooks)) {
+    return { valid: false, error: "hooks must be an object" };
+  }
+  for (const [, entries] of Object.entries(hooks as Record<string, unknown>)) {
+    const check = validateHookEntries(entries);
+    if (!check.valid) return check;
+  }
+  return { valid: true };
+};
+
+// ── Settings key validation ─────────────────────────────────
+
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const MAX_ID_LENGTH = 200;
+
+export const validateSettingsId = (
+  id: unknown,
+  label = "ID"
+): { valid: true; value: string } | { valid: false; error: string } => {
+  if (typeof id !== "string" || !id.trim()) {
+    return { valid: false, error: `${label} is required` };
+  }
+  if (id.length > MAX_ID_LENGTH) {
+    return { valid: false, error: `${label} too long (max ${MAX_ID_LENGTH} chars)` };
+  }
+  if (DANGEROUS_KEYS.has(id)) {
+    return { valid: false, error: `Invalid ${label}` };
+  }
+  if (CONTROL_CHAR_RE.test(id)) {
+    return { valid: false, error: `${label} contains invalid characters` };
+  }
+  return { valid: true, value: id };
+};
+
 // ── Plain object check ──────────────────────────────────────
 
 export const isPlainObject = (value: unknown): value is Record<string, unknown> => {

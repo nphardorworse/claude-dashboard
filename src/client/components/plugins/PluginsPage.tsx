@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { PluginInfo, PluginsResponse } from "../../../shared/types";
 import { apiFetch, buildScopedUrl, getProjectDisplayName } from "../../lib/api";
+import { useToast } from "../shared/use-toast";
 import { PageShell } from "../layout/PageShell";
 import { ScopeBanner } from "../shared/ScopeBanner";
 import { CategoryFilter } from "./CategoryFilter";
@@ -122,9 +123,8 @@ type PluginsPageProps = {
 };
 
 export const PluginsPage = ({ projectPath = null, onClearProject }: PluginsPageProps) => {
+  const { toast } = useToast();
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
-  const [activeCount, setActiveCount] = useState(0);
-  const [totalEstimatedTokens, setTotalEstimatedTokens] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState("All");
@@ -132,13 +132,17 @@ export const PluginsPage = ({ projectPath = null, onClearProject }: PluginsPageP
   const [searchQuery, setSearchQuery] = useState("");
   const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
 
+  const activeCount = useMemo(() => plugins.filter((p) => p.enabled).length, [plugins]);
+  const totalEstimatedTokens = useMemo(
+    () => plugins.filter((p) => p.enabled).reduce((sum, p) => sum + p.estimatedTokens, 0),
+    [plugins]
+  );
+
   const loadPlugins = useCallback(async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
       const data = await fetchPlugins(projectPath);
       setPlugins(data.plugins);
-      setActiveCount(data.activeCount);
-      setTotalEstimatedTokens(data.totalEstimatedTokens);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -156,23 +160,18 @@ export const PluginsPage = ({ projectPath = null, onClearProject }: PluginsPageP
       setTogglingIds((prev) => new Set([...prev, pluginId]));
 
       // Optimistic update — toggle locally, no full refetch
-      setPlugins((prev) => {
-        const plugin = prev.find((p) => p.id === pluginId);
-        const tokenDelta = plugin ? (enabled ? plugin.estimatedTokens : -plugin.estimatedTokens) : 0;
-        setActiveCount((c) => c + (enabled ? 1 : -1));
-        setTotalEstimatedTokens((t) => t + tokenDelta);
-
-        return prev.map((p) =>
+      setPlugins((prev) =>
+        prev.map((p) =>
           p.id === pluginId
             ? { ...p, enabled, enableSource: "project" as const }
             : p
-        );
-      });
+        )
+      );
 
       try {
         await togglePlugin(pluginId, enabled, projectPath);
       } catch (err) {
-        console.error("Toggle failed:", err);
+        toast(err instanceof Error ? err.message : "Toggle failed", "error");
         await loadPlugins(false);
       } finally {
         setTogglingIds((prev) => {
@@ -182,7 +181,7 @@ export const PluginsPage = ({ projectPath = null, onClearProject }: PluginsPageP
         });
       }
     },
-    [projectPath, loadPlugins]
+    [projectPath, loadPlugins, toast]
   );
 
   const categories = useMemo(() => {

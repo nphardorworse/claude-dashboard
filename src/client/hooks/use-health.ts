@@ -10,13 +10,43 @@ export const useHealth = (projectPath?: string | null) => {
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchHealth = useCallback(async () => {
+  useEffect(() => {
+    let cancelled = false;
+
+    const doFetch = async () => {
+      try {
+        const url = buildScopedUrl("/api/health", projectPath ?? null);
+        const response = await fetch(url);
+        if (cancelled) return;
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const json: HealthResponse = await response.json();
+        if (cancelled) return;
+        setData(json);
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+
+    setIsLoading(true);
+    doFetch();
+    intervalRef.current = setInterval(doFetch, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [projectPath]);
+
+  const refetch = useCallback(async () => {
+    setIsLoading(true);
     try {
       const url = buildScopedUrl("/api/health", projectPath ?? null);
       const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const json: HealthResponse = await response.json();
       setData(json);
       setError(null);
@@ -27,16 +57,5 @@ export const useHealth = (projectPath?: string | null) => {
     }
   }, [projectPath]);
 
-  useEffect(() => {
-    setIsLoading(true);
-    fetchHealth();
-    intervalRef.current = setInterval(fetchHealth, POLL_INTERVAL_MS);
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [fetchHealth]);
-
-  return { data, isLoading, error, refetch: fetchHealth };
+  return { data, isLoading, error, refetch };
 };

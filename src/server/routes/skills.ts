@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import { getProjectPath, getSettingsPath } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
+import { withFileLock } from "../lib/file-lock";
 import { scanSkills } from "../lib/skill-scanner";
+import { validateSettingsId } from "../lib/validation";
 import { dirname } from "path";
 import type { SkillsResponse, SkillToggleRequest } from "../../shared/types";
 
@@ -45,12 +47,14 @@ skills.put("/toggle", async (c) => {
     const body = (await c.req.json()) as SkillToggleRequest;
     const { skillId, enabled } = body;
 
-    if (!skillId || typeof enabled !== "boolean") {
+    if (typeof enabled !== "boolean") {
       return c.json(
         { error: "Invalid request: skillId and enabled required" },
         400
       );
     }
+    const idCheck = validateSettingsId(skillId, "skillId");
+    if (!idCheck.valid) return c.json({ error: idCheck.error }, 400);
 
     const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
@@ -59,16 +63,18 @@ skills.put("/toggle", async (c) => {
       await ensureDir(dirname(settingsPath));
     }
 
-    const settings =
-      (await readJsonFile<SettingsJson>(settingsPath)) ?? {};
-    const enabledSkills = settings.enabledSkills ?? {};
+    return await withFileLock(settingsPath, async () => {
+      const settings =
+        (await readJsonFile<SettingsJson>(settingsPath)) ?? {};
+      const enabledSkills = settings.enabledSkills ?? {};
 
-    enabledSkills[skillId] = enabled;
-    settings.enabledSkills = enabledSkills;
+      enabledSkills[idCheck.value] = enabled;
+      settings.enabledSkills = enabledSkills;
 
-    await writeJsonFile(settingsPath, settings);
+      await writeJsonFile(settingsPath, settings);
 
-    return c.json({ ok: true, skillId, enabled });
+      return c.json({ ok: true, skillId: idCheck.value, enabled });
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);

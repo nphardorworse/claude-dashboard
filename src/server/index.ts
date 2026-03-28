@@ -45,11 +45,11 @@ const PORT = 3847;
 const start = async () => {
   const token = await initToken();
 
-  serve({ fetch: app.fetch, port: PORT }, () => {
+  serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" }, () => {
     console.info(
       `Claude Code Dashboard server running on http://localhost:${PORT}`,
     );
-    console.info(`Auth token: ${token}`);
+    console.info("Auth token: see ~/.claude/dashboard-token");
     console.info(`Token file: ~/.claude/dashboard-token`);
   });
 };

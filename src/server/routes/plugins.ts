@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import { getProjectPath, getSettingsPath } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
+import { withFileLock } from "../lib/file-lock";
 import { scanPlugins } from "../lib/plugin-scanner";
+import { validateSettingsId } from "../lib/validation";
 import { dirname } from "path";
 import type {
   PluginsResponse,
@@ -64,9 +66,11 @@ plugins.put("/toggle", async (c) => {
     const body = (await c.req.json()) as ToggleRequest;
     const { pluginId, enabled } = body;
 
-    if (!pluginId || typeof enabled !== "boolean") {
+    if (typeof enabled !== "boolean") {
       return c.json({ error: "Invalid request: pluginId and enabled required" }, 400);
     }
+    const idCheck = validateSettingsId(pluginId, "pluginId");
+    if (!idCheck.valid) return c.json({ error: idCheck.error }, 400);
 
     const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
@@ -75,16 +79,18 @@ plugins.put("/toggle", async (c) => {
       await ensureDir(dirname(settingsPath));
     }
 
-    const settings =
-      (await readJsonFile<SettingsJson>(settingsPath)) ?? {};
-    const enabledPlugins = settings.enabledPlugins ?? {};
+    return await withFileLock(settingsPath, async () => {
+      const settings =
+        (await readJsonFile<SettingsJson>(settingsPath)) ?? {};
+      const enabledPlugins = settings.enabledPlugins ?? {};
 
-    enabledPlugins[pluginId] = enabled;
-    settings.enabledPlugins = enabledPlugins;
+      enabledPlugins[idCheck.value] = enabled;
+      settings.enabledPlugins = enabledPlugins;
 
-    await writeJsonFile(settingsPath, settings);
+      await writeJsonFile(settingsPath, settings);
 
-    return c.json({ ok: true, pluginId, enabled });
+      return c.json({ ok: true, pluginId: idCheck.value, enabled });
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
@@ -103,6 +109,10 @@ plugins.put("/bulk-toggle", async (c) => {
         400
       );
     }
+    for (const id of pluginIds) {
+      const idCheck = validateSettingsId(id, "pluginId");
+      if (!idCheck.valid) return c.json({ error: idCheck.error }, 400);
+    }
 
     const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
@@ -111,18 +121,20 @@ plugins.put("/bulk-toggle", async (c) => {
       await ensureDir(dirname(settingsPath));
     }
 
-    const settings =
-      (await readJsonFile<SettingsJson>(settingsPath)) ?? {};
-    const enabledPlugins = settings.enabledPlugins ?? {};
+    return await withFileLock(settingsPath, async () => {
+      const settings =
+        (await readJsonFile<SettingsJson>(settingsPath)) ?? {};
+      const enabledPlugins = settings.enabledPlugins ?? {};
 
-    for (const pluginId of pluginIds) {
-      enabledPlugins[pluginId] = enabled;
-    }
+      for (const pluginId of pluginIds) {
+        enabledPlugins[pluginId] = enabled;
+      }
 
-    settings.enabledPlugins = enabledPlugins;
-    await writeJsonFile(settingsPath, settings);
+      settings.enabledPlugins = enabledPlugins;
+      await writeJsonFile(settingsPath, settings);
 
-    return c.json({ ok: true, pluginIds, enabled });
+      return c.json({ ok: true, pluginIds, enabled });
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
