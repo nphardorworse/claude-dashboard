@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useToast } from "../shared/Toast";
+import { apiFetch } from "../../lib/api";
+import { useToast } from "../shared/use-toast";
+import { XIcon } from "../shared/NavIcons";
+import { Button } from "~/client/components/ui/button";
+import { Input } from "~/client/components/ui/input";
 
 type LocalSettings = {
   permissions?: { allow?: string[] };
@@ -13,7 +17,7 @@ const fetchLocalSettings = async (): Promise<LocalSettings> => {
 };
 
 const savePermissions = async (allow: string[]): Promise<void> => {
-  const res = await fetch("/api/config/global-local/permissions", {
+  const res = await apiFetch("/api/config/global-local/permissions", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ allow }),
@@ -32,13 +36,9 @@ const PermissionItem = ({ permission, onRemove }: PermissionItemProps) => {
   return (
     <div className="flex items-center justify-between rounded-md border border-[var(--border-hairline)] bg-[var(--overlay-subtle)] px-3 py-1.5">
       <span className="font-mono text-xs text-zinc-300">{permission}</span>
-      <button
-        onClick={handleRemove}
-        className="shrink-0 rounded p-0.5 text-zinc-500 transition-colors hover:bg-[var(--overlay-medium)] hover:text-red-400"
-        title="Remove"
-      >
-        <span className="text-xs">&times;</span>
-      </button>
+      <Button variant="ghost" size="icon-xs" onClick={handleRemove} title="Remove">
+        <XIcon size={12} />
+      </Button>
     </div>
   );
 };
@@ -110,8 +110,7 @@ export const LocalOverrides = () => {
   if (isLoading) return null;
 
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-    <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <div className="rounded-xl bg-[var(--surface-raised)] ring-1 ring-[var(--border-hairline)] p-5">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold text-zinc-100">
@@ -122,13 +121,9 @@ export const LocalOverrides = () => {
           </p>
         </div>
         {hasChanges && (
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
-          >
+          <Button size="sm" onClick={handleSave} disabled={isSaving}>
             {isSaving ? "Saving..." : "Save"}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -144,24 +139,19 @@ export const LocalOverrides = () => {
         </div>
 
         <div className="mt-2 flex gap-2">
-          <input
+          <Input
             type="text"
             value={newPerm}
             onChange={handleNewPermChange}
             onKeyDown={handleKeyDown}
             placeholder="e.g. Bash(npm run *)"
-            className="flex-1 rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-1.5 font-mono text-xs text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-blue-500"
+            className="flex-1 font-mono text-xs"
           />
-          <button
-            onClick={handleAdd}
-            disabled={!newPerm.trim()}
-            className="shrink-0 rounded-md bg-[var(--overlay-medium)] px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-[var(--overlay-medium)] disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+          <Button variant="secondary" size="sm" className="shrink-0" onClick={handleAdd} disabled={!newPerm.trim()}>
             Add
-          </button>
+          </Button>
         </div>
       </div>
-    </div>
     </div>
   );
 };

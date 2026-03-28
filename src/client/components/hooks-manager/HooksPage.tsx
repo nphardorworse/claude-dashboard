@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { buildScopedUrl, getProjectDisplayName } from "../../lib/api";
+import { apiFetch, buildScopedUrl, getProjectDisplayName } from "../../lib/api";
+import { Button } from "~/client/components/ui/button";
 import { PageShell } from "../layout/PageShell";
 import { ScopeBanner } from "../shared/ScopeBanner";
 import { HookEventCard } from "./HookEventCard";
@@ -28,7 +29,7 @@ const fetchHooks = async (
   projectPath: string | null
 ): Promise<HooksResponse> => {
   const url = buildScopedUrl("/api/hooks", projectPath);
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`);
   }
@@ -45,7 +46,7 @@ const addHook = async (
   projectPath: string | null
 ): Promise<void> => {
   const url = buildScopedUrl("/api/hooks/add", projectPath);
-  const res = await fetch(url, {
+  const res = await apiFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -64,7 +65,7 @@ const deleteEvent = async (
     `/api/hooks/${encodeURIComponent(event)}`,
     projectPath
   );
-  const res = await fetch(url, { method: "DELETE" });
+  const res = await apiFetch(url, { method: "DELETE" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -77,7 +78,7 @@ const updateEventHooks = async (
   projectPath: string | null
 ): Promise<void> => {
   const url = buildScopedUrl("/api/hooks", projectPath);
-  const res = await fetch(url, {
+  const res = await apiFetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ event, hooks }),
@@ -96,8 +97,7 @@ const SummaryBar = ({
   totalHookCount: number;
 }) => {
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] px-4 py-3 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <div className="rounded-xl bg-[var(--surface-raised)] ring-1 ring-[var(--border-hairline)] px-5 py-3.5">
         <p className="text-sm text-zinc-300">
           <span className="font-semibold text-zinc-100">{activeEventCount}</span>
           {" events active"}
@@ -105,7 +105,6 @@ const SummaryBar = ({
           <span className="font-semibold text-zinc-100">{totalHookCount}</span>
           {" total hooks"}
         </p>
-      </div>
     </div>
   );
 };
@@ -232,26 +231,30 @@ export const HooksPage = ({ projectPath = null, onClearProject }: HooksPageProps
       const confirmed = window.confirm("Remove this hook?");
       if (!confirmed) return;
 
-      if (!hooksData) return;
-
-      const entries = hooksData.hooks[event];
-      if (!entries) return;
-
-      // Deep clone the entries to avoid mutating state
-      const updatedEntries: HookEntry[] = entries.map((entry) => ({
-        matcher: entry.matcher,
-        hooks: [...entry.hooks],
-      }));
-
-      // Remove the specific hook command
-      updatedEntries[entryIndex].hooks.splice(hookIndex, 1);
-
-      // If the entry has no more hooks, remove the entry
-      const filtered = updatedEntries.filter(
-        (entry) => entry.hooks.length > 0
-      );
-
       try {
+        // Re-fetch current state to avoid stale-closure race
+        const freshData = await fetchHooks(projectPath);
+        const entries = freshData.hooks[event];
+        if (!entries) return;
+
+        // Deep clone the entries to avoid mutating state
+        const updatedEntries: HookEntry[] = entries.map((entry) => ({
+          matcher: entry.matcher,
+          hooks: [...entry.hooks],
+        }));
+
+        // Guard against stale indexes after re-fetch
+        if (entryIndex >= updatedEntries.length) return;
+        if (hookIndex >= updatedEntries[entryIndex].hooks.length) return;
+
+        // Remove the specific hook command
+        updatedEntries[entryIndex].hooks.splice(hookIndex, 1);
+
+        // If the entry has no more hooks, remove the entry
+        const filtered = updatedEntries.filter(
+          (entry) => entry.hooks.length > 0
+        );
+
         await updateEventHooks(event, filtered, projectPath);
         await loadHooks();
       } catch (err) {
@@ -260,7 +263,7 @@ export const HooksPage = ({ projectPath = null, onClearProject }: HooksPageProps
         );
       }
     },
-    [hooksData, loadHooks, projectPath]
+    [loadHooks, projectPath]
   );
 
   const handleOpenForm = useCallback(() => {
@@ -308,12 +311,13 @@ export const HooksPage = ({ projectPath = null, onClearProject }: HooksPageProps
               />
 
               {!isFormOpen && (
-                <button
+                <Button
                   onClick={handleOpenForm}
-                  className="ml-4 shrink-0 rounded-lg bg-[var(--overlay-medium)] px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-[var(--overlay-medium)]"
+                  variant="secondary"
+                  className="ml-4 shrink-0"
                 >
                   Add Hook
-                </button>
+                </Button>
               )}
             </div>
 
@@ -340,15 +344,13 @@ export const HooksPage = ({ projectPath = null, onClearProject }: HooksPageProps
             </div>
 
             {activeEvents.length === 0 && !isFormOpen && (
-              <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-                <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] px-4 py-8 text-center shadow-[inset_0_1px_1px_var(--glow-inset)]">
-                  <p className="text-sm text-zinc-500">
-                    No hooks configured yet.
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Click "Add Hook" to get started.
-                  </p>
-                </div>
+              <div className="rounded-xl bg-[var(--surface-raised)] ring-1 ring-[var(--border-hairline)] px-5 py-8 text-center">
+                <p className="text-sm text-zinc-500">
+                  No hooks configured yet.
+                </p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Click "Add Hook" to get started.
+                </p>
               </div>
             )}
 

@@ -53,22 +53,22 @@ const CASCADE_ITEMS: CascadeItem[] = [
     ],
   },
   {
-    action: "Switch Profile",
+    action: "Switch Profile (dashboard feature)",
     badgeClass: "bg-purple-500/15 text-purple-400 ring-purple-500/20",
     effects: [
       {
         prefix: "├──",
-        text: "Active plugins → swapped to profile set",
+        text: "All current plugins → disabled first",
         color: "red",
       },
       {
         prefix: "├──",
-        text: "Plugin settings → reset to profile defaults",
+        text: "Profile's plugins → enabled",
         color: "red",
       },
       {
         prefix: "└──",
-        text: "Global/project overrides → still apply",
+        text: "Hooks, MCPs, skills → follow plugin state",
         color: "green",
       },
     ],

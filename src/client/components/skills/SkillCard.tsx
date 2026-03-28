@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import type { SkillInfo, EnableSource, TokenLevel } from "../../../shared/types";
 import { Toggle } from "../shared/Toggle";
 import { Badge } from "../shared/Badge";
+import { Card, CardContent } from "~/client/components/ui/card";
 
 const SOURCE_LABELS: Record<EnableSource, string> = {
   global: "global",
@@ -45,12 +46,13 @@ export const SkillCard = ({ skill, onToggle, isToggling }: SkillCardProps) => {
   const toggleDisabled = isToggling || !skill.parentPluginEnabled;
 
   return (
-    <div
-      className={`group rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)] transition-snappy hover:ring-[var(--border-accent)] ${
+    <Card
+      className={`group hover:ring-[var(--border-accent)] ${
         skill.enabled && skill.parentPluginEnabled ? "" : "opacity-50"
       }`}
     >
-      <div className="flex items-center justify-between gap-4 rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2.5">
             <h3 className="truncate text-[13px] font-semibold text-zinc-100">
@@ -103,7 +105,8 @@ export const SkillCard = ({ skill, onToggle, isToggling }: SkillCardProps) => {
             disabled={toggleDisabled}
           />
         </div>
-      </div>
-    </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 };

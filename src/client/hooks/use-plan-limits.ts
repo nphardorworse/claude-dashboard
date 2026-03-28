@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { apiFetch } from "../lib/api";
 import type { PlanLimits } from "../../shared/types";
 
 const DEFAULT_LIMITS: PlanLimits = {
@@ -34,7 +35,7 @@ export const usePlanLimits = () => {
     const previous = limitsRef.current;
     setLimits(next);
     try {
-      const res = await fetch("/api/defaults/plan-limits", {
+      const res = await apiFetch("/api/defaults/plan-limits", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(next),

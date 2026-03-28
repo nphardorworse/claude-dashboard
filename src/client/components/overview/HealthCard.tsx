@@ -1,3 +1,4 @@
+import { Card, CardContent } from "~/client/components/ui/card";
 import type { TokenLevel } from "../../../shared/types";
 
 type HealthCardProps = {
@@ -24,10 +25,8 @@ export const HealthCard = ({ title, value, subtitle, level }: HealthCardProps) =
   const glowClass = level ? LEVEL_GLOW[level] : "";
 
   return (
-    /* Double-bezel: outer shell */
-    <div className={`rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)] ${glowClass}`}>
-      {/* Inner core */}
-      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-5 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card className={glowClass}>
+      <CardContent>
         <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-400">
           {title}
         </p>
@@ -37,7 +36,7 @@ export const HealthCard = ({ title, value, subtitle, level }: HealthCardProps) =
         {subtitle && (
           <p className="mt-1.5 text-[11px] text-zinc-400">{subtitle}</p>
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };

@@ -9,10 +9,12 @@ import { SessionHistory } from "./SessionHistory";
 import { ProjectAnalytics } from "./ProjectAnalytics";
 import { LocalOverrides } from "./LocalOverrides";
 import { getProjectDisplayName } from "../../lib/api";
+import { XIcon } from "../shared/NavIcons";
 
 type OverviewPageProps = {
   projectPath?: string | null;
   onClearProject?: () => void;
+  onSelectProject?: (path: string) => void;
 };
 
 const formatTokenCount = (tokens: number): string => {
@@ -33,7 +35,7 @@ const LoadingState = () => {
 
 const ErrorState = ({ message }: { message: string }) => {
   return (
-    <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3">
+    <div className="rounded-lg bg-red-500/10 px-4 py-3 shadow-[inset_0_0_0_1px_rgba(239,68,68,0.2)]">
       <p className="text-sm text-red-400">
         Failed to load health data: {message}
       </p>
@@ -47,23 +49,23 @@ type ScopeBannerProps = {
 };
 
 const ScopeBanner = ({ projectName, onClear }: ScopeBannerProps) => (
-  <div className="flex items-center rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-2.5">
+  <div className="flex items-center rounded-lg bg-blue-500/10 px-4 py-2.5 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.2)]">
     <p className="flex-1 text-sm text-blue-300">
       Scoped to <span className="font-semibold">{projectName}</span>
     </p>
     {onClear && (
       <button
         onClick={onClear}
-        className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-blue-400/60 transition-snappy hover:bg-blue-400/10 hover:text-blue-300 before:absolute before:-inset-2.5 before:content-['']"
+        className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-blue-400/60 transition-snappy hover:bg-blue-400/10 hover:text-blue-300 active:scale-[0.96] before:absolute before:-inset-2.5 before:content-['']"
         title="Return to global view"
       >
-        &#10005;
+        <XIcon size={12} />
       </button>
     )}
   </div>
 );
 
-export const OverviewPage = ({ projectPath, onClearProject }: OverviewPageProps) => {
+export const OverviewPage = ({ projectPath, onClearProject, onSelectProject }: OverviewPageProps) => {
   const { data, isLoading, error } = useHealth(projectPath);
   const isScoped = !!projectPath;
   const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
@@ -96,7 +98,7 @@ export const OverviewPage = ({ projectPath, onClearProject }: OverviewPageProps)
     return `${activePlugins} of ${totalPlugins} enabled`;
   }, [data]);
 
-  const profileSubtitle = useMemo(() => {
+  const _profileSubtitle = useMemo(() => {
     if (!data) return undefined;
     return data.summary.activeProfile ?? "No matching profile";
   }, [data]);
@@ -112,7 +114,7 @@ export const OverviewPage = ({ projectPath, onClearProject }: OverviewPageProps)
 
         {!isLoading && !error && data && (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
               <HealthCard
                 title="Plugins"
                 value={data.summary.activePlugins}
@@ -136,7 +138,7 @@ export const OverviewPage = ({ projectPath, onClearProject }: OverviewPageProps)
               />
             </div>
 
-            <CostEstimator plugins={data.topPluginsByCost} />
+            <CostEstimator plugins={data.topPluginsByCost} contextWindowSize={data.summary.contextWindowSize} />
 
             {isScoped && projectPath && (
               <ProjectAnalytics
@@ -151,7 +153,7 @@ export const OverviewPage = ({ projectPath, onClearProject }: OverviewPageProps)
                 focusSessionId={focusSessionId}
               />
             ) : (
-              <ProjectCostTable />
+              <ProjectCostTable onSelectProject={onSelectProject} />
             )}
 
             <LocalOverrides />

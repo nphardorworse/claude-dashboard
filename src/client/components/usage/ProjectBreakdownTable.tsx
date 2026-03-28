@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback } from "react";
 import type { WindowedProjectUsage } from "../../../shared/types";
 import { formatTokens, formatCost } from "../../lib/format";
+import { Card, CardContent } from "~/client/components/ui/card";
 
 type ProjectBreakdownTableProps = {
   sessionProjects: WindowedProjectUsage[];
@@ -20,7 +21,7 @@ type TabButtonProps = {
 const TabButton = ({ label, isActive, onClick }: TabButtonProps) => (
   <button
     onClick={onClick}
-    className={`rounded-md px-3 py-1 text-[11px] font-medium transition-snappy ${
+    className={`rounded-md px-3 py-1 text-[11px] font-medium transition-snappy active:scale-[0.96] ${
       isActive
         ? "bg-[var(--overlay-medium)] text-zinc-200"
         : "text-zinc-500 hover:text-zinc-300"
@@ -41,16 +42,16 @@ const ProjectRow = ({ project }: ProjectRowProps) => (
     <td className="py-2.5 pr-3 text-[12px] font-medium text-zinc-300" title={project.path}>
       {project.name}
     </td>
-    <td className="py-2.5 pr-3 text-right font-mono text-[11px] font-medium text-zinc-200">
+    <td className="py-2.5 pr-3 text-right font-mono text-[11px] font-medium tabular-nums text-zinc-200">
       {project.messages}
     </td>
-    <td className="py-2.5 pr-3 text-right font-mono text-[11px] text-zinc-400">
+    <td className="py-2.5 pr-3 text-right font-mono text-[11px] tabular-nums text-zinc-400">
       {formatTokens(project.outputTokens)}
     </td>
-    <td className="py-2.5 pr-3 text-right font-mono text-[11px] text-zinc-400">
+    <td className="py-2.5 pr-3 text-right font-mono text-[11px] tabular-nums text-zinc-400">
       {formatTokens(project.inputTokens)}
     </td>
-    <td className="py-2.5 text-right font-mono text-[11px] text-zinc-500">
+    <td className="py-2.5 text-right font-mono text-[11px] tabular-nums text-zinc-500">
       {formatCost(project.estimatedCostUSD)}
     </td>
   </tr>
@@ -72,8 +73,8 @@ export const ProjectBreakdownTable = ({ sessionProjects, weeklyProjects }: Proje
   );
 
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-5 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card>
+      <CardContent>
         {/* Header */}
         <div className="flex items-center justify-between">
           <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
@@ -114,7 +115,7 @@ export const ProjectBreakdownTable = ({ sessionProjects, weeklyProjects }: Proje
             <tbody>{rows}</tbody>
           </table>
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };

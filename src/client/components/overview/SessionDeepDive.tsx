@@ -4,6 +4,7 @@ import { buildScopedUrl } from "../../lib/api";
 import { ContextGrowthChart } from "./ContextGrowthChart";
 import { ContextCompositionChart } from "./ContextCompositionChart";
 import { InsightCards } from "./InsightCards";
+import { Button } from "~/client/components/ui/button";
 
 type SessionDeepDiveProps = {
   sessionId: string;
@@ -79,7 +80,7 @@ const ModelBar = ({ model, costUSD, maxCost }: ModelBarProps) => {
           style={{ width: `${Math.max(widthPercent, 2)}%` }}
         />
       </div>
-      <span className="w-14 shrink-0 text-right font-mono text-[10px] text-zinc-400">
+      <span className="w-14 shrink-0 text-right font-mono text-[10px] tabular-nums text-zinc-400">
         {formatCost(costUSD)}
       </span>
     </div>
@@ -222,7 +223,7 @@ const InlineCompositionBar = ({
         ))}
       </div>
       {/* Hover tooltip */}
-      <div className="pointer-events-none absolute bottom-full right-0 z-10 mb-1.5 rounded-lg bg-[var(--overlay-medium)] px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover/bar:opacity-100">
+      <div className="pointer-events-none absolute bottom-full right-0 z-10 mb-1.5 rounded-lg bg-zinc-900 px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover/bar:opacity-100">
         <div className="flex flex-col gap-0.5">
           {segs.map((s) => (
             <span key={s.key} className="flex items-center gap-1.5 whitespace-nowrap text-[10px] text-zinc-400">
@@ -310,19 +311,19 @@ const TurnTableRow = ({ turn, prevTurn, systemEstimate, maxContext }: TurnTableR
     <td className="px-2 py-1.5 text-zinc-400">
       {truncateModel(turn.model)}
     </td>
-    <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-zinc-500">
+    <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono tabular-nums text-zinc-500">
       {formatDuration(turn.durationMs)}
     </td>
-    <td className="px-2 py-1.5 text-right font-mono text-blue-400">
+    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-blue-400">
       {formatTokens(turn.inputTokens)}
     </td>
-    <td className="px-2 py-1.5 text-right font-mono text-rose-400">
+    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-rose-400">
       {formatTokens(turn.outputTokens)}
     </td>
-    <td className="px-2 py-1.5 text-right font-mono text-emerald-400">
+    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-emerald-400">
       {formatTokens(turn.cacheReadTokens)}
     </td>
-    <td className="px-2 py-1.5 text-right font-mono text-zinc-200">
+    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-zinc-200">
       {formatCost(turn.costUSD)}
     </td>
     <td className="w-[140px] min-w-[140px] px-2 py-1.5">
@@ -481,13 +482,9 @@ export const SessionDeepDive = ({
                 </span>
               )}
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md px-2 py-1 text-[10px] text-zinc-500 transition-snappy hover:bg-[var(--overlay-medium)] hover:text-zinc-300"
-            >
+            <Button variant="ghost" size="sm" onClick={onClose}>
               Close
-            </button>
+            </Button>
           </div>
 
           {isLoading && <LoadingState />}

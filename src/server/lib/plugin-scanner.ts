@@ -45,7 +45,7 @@ const TEXT_EXTENSIONS = new Set([
   ".csv", ".env", ".cfg", ".ini", ".conf",
 ]);
 
-const walkTextFiles = async (dirPath: string): Promise<number> => {
+const walkTextFiles = async (dirPath: string, excludeDirs?: Set<string>): Promise<number> => {
   let totalBytes = 0;
 
   try {
@@ -59,7 +59,8 @@ const walkTextFiles = async (dirPath: string): Promise<number> => {
       }
 
       if (entry.isDirectory()) {
-        totalBytes += await walkTextFiles(fullPath);
+        if (excludeDirs && excludeDirs.has(entry.name)) continue;
+        totalBytes += await walkTextFiles(fullPath, excludeDirs);
       } else if (entry.isFile() && TEXT_EXTENSIONS.has(extname(entry.name))) {
         try {
           const fileStat = await stat(fullPath);
@@ -147,8 +148,19 @@ const scanSinglePlugin = async (
     fileExists(join(installed.installPath, ".mcp.json")),
   ]);
 
-  const contentSizeBytes = await walkTextFiles(installed.installPath);
+  // Only count directories Claude Code actually loads into context.
+  // skills/ are counted separately per-skill by the health endpoint.
+  const FUNCTIONAL_DIRS = ["agents", "commands", "hooks"];
+  const baseDirWalks = FUNCTIONAL_DIRS.map((dir) =>
+    walkTextFiles(join(installed.installPath, dir))
+  );
+  const [contentSizeBytes, ...baseDirSizes] = await Promise.all([
+    walkTextFiles(installed.installPath),
+    ...baseDirWalks,
+  ]);
+  const baseContentSizeBytes = baseDirSizes.reduce((sum, s) => sum + s, 0);
   const estimatedTokens = estimateTokens(contentSizeBytes);
+  const baseEstimatedTokens = estimateTokens(baseContentSizeBytes);
   const tokenLevel = getTokenLevel(estimatedTokens);
 
   const { enabled, source } = resolveEnabled(installed.id, globalMap, projectMap);
@@ -165,6 +177,8 @@ const scanSinglePlugin = async (
     lastUpdated: installed.lastUpdated ?? manifest?.lastUpdated ?? "",
     contentSizeBytes,
     estimatedTokens,
+    baseEstimatedTokens,
+    activeEstimatedTokens: estimatedTokens, // Accurate value computed by health endpoint
     tokenLevel,
     hasAgents,
     hasSkills,

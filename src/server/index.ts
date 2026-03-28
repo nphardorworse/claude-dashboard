@@ -13,12 +13,19 @@ import { sessions } from "./routes/sessions";
 import { defaults } from "./routes/defaults";
 import { analytics } from "./routes/analytics";
 import { usage } from "./routes/usage";
+import { initToken, getToken, authMiddleware } from "./lib/auth";
 
 const app = new Hono();
 
 app.use("/*", cors({ origin: "http://localhost:5175" }));
+app.use("/api/*", authMiddleware);
 
 app.get("/api/ping", (c) => c.json({ ok: true }));
+
+// Bootstrap endpoint — returns the auth token to same-origin browser requests.
+// Protected by CORS (only localhost:5175 origin allowed) so non-browser
+// clients cannot fetch it without already knowing the token.
+app.get("/api/auth/token", (c) => c.json({ token: getToken() }));
 
 app.route("/api/config", config);
 app.route("/api/health", health);
@@ -35,10 +42,18 @@ app.route("/api/usage", usage);
 
 const PORT = 3847;
 
-serve({ fetch: app.fetch, port: PORT }, () => {
-  console.log(
-    `Claude Code Dashboard server running on http://localhost:${PORT}`,
-  );
-});
+const start = async () => {
+  const token = await initToken();
+
+  serve({ fetch: app.fetch, port: PORT }, () => {
+    console.info(
+      `Claude Code Dashboard server running on http://localhost:${PORT}`,
+    );
+    console.info(`Auth token: ${token}`);
+    console.info(`Token file: ~/.claude/dashboard-token`);
+  });
+};
+
+start();
 
 export default app;

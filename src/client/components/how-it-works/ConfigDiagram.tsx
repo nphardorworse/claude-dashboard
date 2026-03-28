@@ -31,7 +31,7 @@ const ArrowWithLabel = ({ y }: { y: number }) => (
       x2={CENTER_X}
       y2={y + 18}
       stroke={LINE_STROKE}
-      strokeWidth={1.5}
+      strokeWidth={2}
     />
     <polygon
       points={`${CENTER_X - 4},${y + 14} ${CENTER_X + 4},${y + 14} ${CENTER_X},${y + 20}`}
@@ -88,10 +88,10 @@ export const ConfigDiagram = ({ level }: ConfigDiagramProps) => {
         fill={
           layer.highlight
             ? "var(--overlay-subtle)"
-            : "var(--surface-raised)"
+            : "var(--overlay-faint, var(--surface-raised))"
         }
         stroke={LINE_STROKE}
-        strokeWidth={1.5}
+        strokeWidth={2}
         rx={8}
       />
       <text
@@ -116,12 +116,12 @@ export const ConfigDiagram = ({ level }: ConfigDiagramProps) => {
   ));
 
   return (
-    <div className="w-full overflow-x-auto">
+    <div className="rounded-xl bg-[var(--surface-raised)] p-5 ring-1 ring-[var(--border-hairline)] overflow-x-auto">
       <svg
         viewBox="0 0 600 200"
         role="img"
         aria-label="Config resolution priority diagram showing project, global, and default layers"
-        style={{ minWidth: 480 }}
+        style={{ minWidth: 400, maxWidth: "100%" }}
       >
         <PriorityLabels />
 

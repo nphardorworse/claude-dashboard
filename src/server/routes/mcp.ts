@@ -8,6 +8,7 @@ import { scanPluginMcps } from "../lib/plugin-mcp-scanner";
 import { dirname } from "path";
 import type { ClaudeJson, ProjectEntry } from "../lib/types";
 import type { McpOrigin, McpServerConfig } from "../../shared/types";
+import { validateMcpName, validateMcpCommand, validateMcpArgs, validateMcpEnv } from "../lib/validation";
 
 type DashboardConfig = {
   pinnedMcpServers?: string[];
@@ -39,12 +40,17 @@ mcp.post("/servers", async (c) => {
     };
     const { name, command, args, env } = body;
 
-    if (!name || typeof name !== "string" || !name.trim()) {
-      return c.json({ error: "Server name is required" }, 400);
-    }
-    if (!command || typeof command !== "string" || !command.trim()) {
-      return c.json({ error: "Command is required" }, 400);
-    }
+    const nameResult = validateMcpName(name);
+    if (!nameResult.valid) return c.json({ error: nameResult.error }, 400);
+
+    const cmdResult = validateMcpCommand(command);
+    if (!cmdResult.valid) return c.json({ error: cmdResult.error }, 400);
+
+    const argsResult = validateMcpArgs(args);
+    if (!argsResult.valid) return c.json({ error: argsResult.error }, 400);
+
+    const envResult = validateMcpEnv(env);
+    if (!envResult.valid) return c.json({ error: envResult.error }, 400);
 
     const projectPath = await getProjectPath(c);
     const mcpPath = getMcpJsonPath(projectPath);
@@ -53,31 +59,31 @@ mcp.post("/servers", async (c) => {
       await ensureDir(dirname(mcpPath));
     }
 
-    return withFileLock(mcpPath, async () => {
+    return await withFileLock(mcpPath, async () => {
       const data = (await readJsonFile<ClaudeJson>(mcpPath)) ?? {};
       const mcpServers = data.mcpServers ?? {};
 
-      if (mcpServers[name.trim()]) {
+      if (mcpServers[nameResult.value]) {
         return c.json(
-          { error: `Server "${name.trim()}" already exists` },
+          { error: `Server "${nameResult.value}" already exists` },
           409
         );
       }
 
-      const serverConfig: McpServerConfig = { command: command.trim() };
-      if (args && args.length > 0) {
-        serverConfig.args = args;
+      const serverConfig: McpServerConfig = { command: cmdResult.value };
+      if (argsResult.value && argsResult.value.length > 0) {
+        serverConfig.args = argsResult.value;
       }
-      if (env && Object.keys(env).length > 0) {
-        serverConfig.env = env;
+      if (envResult.value && Object.keys(envResult.value).length > 0) {
+        serverConfig.env = envResult.value;
       }
 
-      mcpServers[name.trim()] = serverConfig;
+      mcpServers[nameResult.value] = serverConfig;
       data.mcpServers = mcpServers;
 
       await writeJsonFile(mcpPath, data);
 
-      return c.json({ ok: true, name: name.trim() });
+      return c.json({ ok: true, name: nameResult.value });
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -88,12 +94,14 @@ mcp.post("/servers", async (c) => {
 // DELETE /servers/:name — remove an MCP server
 mcp.delete("/servers/:name", async (c) => {
   try {
-    const name = c.req.param("name");
+    const nameResult = validateMcpName(c.req.param("name"));
+    if (!nameResult.valid) return c.json({ error: nameResult.error }, 400);
+    const name = nameResult.value;
 
     const projectPath = await getProjectPath(c);
     const mcpPath = getMcpJsonPath(projectPath);
 
-    return withFileLock(mcpPath, async () => {
+    return await withFileLock(mcpPath, async () => {
       const data = (await readJsonFile<ClaudeJson>(mcpPath)) ?? {};
       const mcpServers = data.mcpServers ?? {};
 
@@ -137,7 +145,7 @@ mcp.put("/project-toggle", async (c) => {
       }
     }
 
-    return withFileLock(PATHS.claudeJson, async () => {
+    return await withFileLock(PATHS.claudeJson, async () => {
       const claudeJson = (await readJsonFile<ClaudeJson>(PATHS.claudeJson)) ?? {};
       const projects = claudeJson.projects ?? {};
       const projEntry = (projects[projectPath] ?? {}) as ProjectEntry;
@@ -168,6 +176,8 @@ mcp.put("/project-toggle", async (c) => {
         if (!sourceConfig) {
           return c.json({ error: `"${mcpName}" not found in global disabled MCPs` }, 404);
         }
+        // Strip the "enabled: false" flag so Claude Code treats it as active
+        delete (sourceConfig as Record<string, unknown>).enabled;
         // Move from disabled to active globally
         const globalActive = claudeJson.mcpServers ?? {};
         globalActive[mcpName] = sourceConfig;
@@ -208,7 +218,7 @@ mcp.post("/copy-to-project", async (c) => {
     // Pre-fetch cached plugin MCPs outside the lock (cheap, cached)
     const pluginMcps = await scanPluginMcps();
 
-    return withFileLock(PATHS.claudeJson, async () => {
+    return await withFileLock(PATHS.claudeJson, async () => {
       const claudeJson = (await readJsonFile<ClaudeJson>(PATHS.claudeJson)) ?? {};
 
       // Look up config directly from claudeJson and plugin MCPs (no health check)
@@ -222,14 +232,11 @@ mcp.post("/copy-to-project", async (c) => {
       if (!foundConfig && claudeJson.disabledMcpServers?.[mcpName]) {
         foundConfig = claudeJson.disabledMcpServers[mcpName];
       }
-      // Check personal MCPs across all projects
+      // Check personal MCPs only in the target project (not across all projects)
       if (!foundConfig && claudeJson.projects) {
-        for (const projEntry of Object.values(claudeJson.projects)) {
-          const pe = projEntry as ProjectEntry;
-          if (pe.mcpServers?.[mcpName]) {
-            foundConfig = pe.mcpServers[mcpName];
-            break;
-          }
+        const pe = (claudeJson.projects[targetProjectPath] ?? {}) as ProjectEntry;
+        if (pe.mcpServers?.[mcpName]) {
+          foundConfig = pe.mcpServers[mcpName];
         }
       }
       // Check plugin MCPs
@@ -276,7 +283,7 @@ mcp.put("/pinned", async (c) => {
       return c.json({ error: "servers array required" }, 400);
     }
 
-    return withFileLock(PATHS.dashboardConfig, async () => {
+    return await withFileLock(PATHS.dashboardConfig, async () => {
       const config = (await readJsonFile<DashboardConfig>(PATHS.dashboardConfig)) ?? {};
       config.pinnedMcpServers = servers;
       await writeJsonFile(PATHS.dashboardConfig, config);
@@ -308,7 +315,7 @@ mcp.put("/global-toggle", async (c) => {
       }
     }
 
-    return withFileLock(PATHS.claudeJson, async () => {
+    return await withFileLock(PATHS.claudeJson, async () => {
       const claudeJson = (await readJsonFile<ClaudeJson>(PATHS.claudeJson)) ?? {};
       const active = claudeJson.mcpServers ?? {};
       const disabled = claudeJson.disabledMcpServers ?? {};
@@ -325,6 +332,8 @@ mcp.put("/global-toggle", async (c) => {
         if (!config) {
           return c.json({ error: `"${mcpName}" not found in disabled global MCPs` }, 404);
         }
+        // Strip the "enabled: false" flag so Claude Code treats it as active
+        delete (config as Record<string, unknown>).enabled;
         active[mcpName] = config;
         delete disabled[mcpName];
       }

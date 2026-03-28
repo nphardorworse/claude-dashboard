@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { PATHS, getProjectPath, getSettingsPath } from "../lib/paths";
+import { getProjectPath, getSettingsPath } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
 import { scanPlugins } from "../lib/plugin-scanner";
 import { dirname } from "path";

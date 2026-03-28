@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { version } from "../../../../package.json";
 import { useRoute } from "../../hooks/use-route";
 import { ProjectSelector } from "../projects/ProjectSelector";
 import { UsageWidget } from "./UsageWidget";
@@ -131,7 +132,7 @@ type ThemeToggleProps = {
 const ThemeToggle = ({ isDark, onToggle }: ThemeToggleProps) => (
   <button
     onClick={onToggle}
-    className="flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-snappy hover:bg-[var(--overlay-subtle)] hover:text-zinc-300"
+    className="flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-snappy hover:bg-[var(--overlay-subtle)] hover:text-zinc-300 active:scale-[0.96]"
     title={isDark ? "Switch to light mode" : "Switch to dark mode"}
   >
     {isDark ? <SunIcon /> : <MoonIcon />}
@@ -157,11 +158,14 @@ export const Sidebar = ({
 
   return (
     <aside className="relative flex h-screen w-60 shrink-0 flex-col border-r border-[var(--border-hairline)] bg-[var(--surface-sidebar)]">
-      {/* Subtle inner highlight on right edge */}
-      <span className="absolute right-0 top-0 bottom-0 w-px bg-gradient-to-b from-[var(--overlay-faint)] via-[var(--border-hairline)] to-[var(--overlay-faint)]" />
-
       <div className="px-6 pt-3">
-        <img src="/logo.png" alt="" width={50} height={50} className="mb-1.5" />
+        <img
+          src="/logo.png"
+          alt=""
+          width={50}
+          height={50}
+          className="mb-1.5 rounded-lg ring-1 ring-[var(--border-hairline)]"
+        />
         <h2 className="text-[13px] font-semibold tracking-wide text-zinc-100">
           Claude Code Dashboard
         </h2>
@@ -181,10 +185,10 @@ export const Sidebar = ({
       <UsageWidget selectedProjectPath={projectPath} />
 
       {/* Bottom — version + theme toggle */}
-      <div className="border-t border-[var(--border-hairline)] px-6 py-4">
+      <div className="border-t border-[var(--border-hairline)] px-6 py-1">
         <div className="flex items-center justify-between">
           <p className="text-[10px] uppercase tracking-[0.15em] text-zinc-500">
-            v1.0 — Local Only
+            v{version}
           </p>
           <ThemeToggle isDark={isDark} onToggle={onToggleTheme} />
         </div>

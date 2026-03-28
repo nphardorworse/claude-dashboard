@@ -15,6 +15,12 @@ export const useTheme = () => {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+    // Bridge for shadcn: it uses .dark class for dark mode
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
     localStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 

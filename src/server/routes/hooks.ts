@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { getProjectPath, getSettingsPath } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
 import { dirname } from "path";
+import { validateHookCommand, validateHookMatcher, validateHookTimeout } from "../lib/validation";
 
 const HOOK_EVENTS = [
   "SessionStart",
@@ -103,6 +104,31 @@ hooks.put("/", async (c) => {
       );
     }
 
+    if (!HOOK_EVENTS.includes(event as typeof HOOK_EVENTS[number])) {
+      return c.json({ error: `Unknown hook event: "${event}"` }, 400);
+    }
+
+    // Validate each entry's fields
+    for (const entry of eventHooks) {
+      const matcherCheck = validateHookMatcher(entry.matcher);
+      if (!matcherCheck.valid) return c.json({ error: matcherCheck.error }, 400);
+
+      if (!Array.isArray(entry.hooks)) {
+        return c.json({ error: "Each entry must have a hooks array" }, 400);
+      }
+
+      for (const hook of entry.hooks) {
+        if (hook.type !== "command") {
+          return c.json({ error: `Invalid hook type: "${hook.type}" (must be "command")` }, 400);
+        }
+        const cmdCheck = validateHookCommand(hook.command);
+        if (!cmdCheck.valid) return c.json({ error: cmdCheck.error }, 400);
+
+        const timeoutCheck = validateHookTimeout(hook.timeout);
+        if (!timeoutCheck.valid) return c.json({ error: timeoutCheck.error }, 400);
+      }
+    }
+
     const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
 
@@ -132,6 +158,10 @@ hooks.put("/", async (c) => {
 hooks.delete("/:event", async (c) => {
   try {
     const event = c.req.param("event");
+
+    if (!HOOK_EVENTS.includes(event as typeof HOOK_EVENTS[number])) {
+      return c.json({ error: `Unknown hook event: "${event}"` }, 400);
+    }
 
     const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
@@ -169,12 +199,22 @@ hooks.post("/add", async (c) => {
 
     const { event, matcher, command, timeout } = body;
 
-    if (!event || !matcher || !command) {
-      return c.json(
-        { error: "Invalid request: event, matcher, and command required" },
-        400
-      );
+    if (!event) {
+      return c.json({ error: "Event is required" }, 400);
     }
+
+    if (!HOOK_EVENTS.includes(event as typeof HOOK_EVENTS[number])) {
+      return c.json({ error: `Unknown hook event: "${event}"` }, 400);
+    }
+
+    const matcherResult = validateHookMatcher(matcher);
+    if (!matcherResult.valid) return c.json({ error: matcherResult.error }, 400);
+
+    const cmdResult = validateHookCommand(command);
+    if (!cmdResult.valid) return c.json({ error: cmdResult.error }, 400);
+
+    const timeoutResult = validateHookTimeout(timeout);
+    if (!timeoutResult.valid) return c.json({ error: timeoutResult.error }, 400);
 
     const projectPath = await getProjectPath(c);
     const settingsPath = getSettingsPath(projectPath);
@@ -185,19 +225,19 @@ hooks.post("/add", async (c) => {
 
     const { settings, hooks: hooksMap } = await readHooks(settingsPath);
 
-    const newHookCommand: HookCommand = { type: "command", command };
-    if (timeout != null) {
-      newHookCommand.timeout = timeout;
+    const newHookCommand: HookCommand = { type: "command", command: cmdResult.value };
+    if (timeoutResult.value != null) {
+      newHookCommand.timeout = timeoutResult.value;
     }
 
     const eventHooks = hooksMap[event] ?? [];
 
     // Find an existing entry with the same matcher, or create a new one
-    const existingEntry = eventHooks.find((e) => e.matcher === matcher);
+    const existingEntry = eventHooks.find((e) => e.matcher === matcherResult.value);
     if (existingEntry) {
       existingEntry.hooks.push(newHookCommand);
     } else {
-      eventHooks.push({ matcher, hooks: [newHookCommand] });
+      eventHooks.push({ matcher: matcherResult.value, hooks: [newHookCommand] });
     }
 
     hooksMap[event] = eventHooks;

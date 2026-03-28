@@ -1,9 +1,9 @@
 import { join } from "path";
-import { PATHS, loadKnownProjects, getMcpJsonPath } from "./paths";
+import { PATHS, loadKnownProjects } from "./paths";
 import { readJsonFile } from "./file-io";
 import { checkMcpHealth } from "./mcp-health";
 import { scanPluginMcps } from "./plugin-mcp-scanner";
-import type { ClaudeJson, ProjectEntry } from "./types";
+import type { ClaudeJson } from "./types";
 import type {
   McpOrigin,
   McpCatalogEntry,
@@ -92,7 +92,7 @@ const scanProjectMcps = async (
       if (!raw) continue;
 
       const servers = parseMcpJson(raw);
-      const projectName = projectPath.split("/").pop() ?? projectPath;
+      const _projectName = projectPath.split("/").pop() ?? projectPath;
 
       for (const [name, config] of Object.entries(servers)) {
         const entry = makeEntry(name, "project", config, healthMap, pinnedSet, {

@@ -1,8 +1,9 @@
 import { Hono } from "hono";
-import { basename, join } from "path";
+import { basename, join, resolve } from "path";
 import { access } from "fs/promises";
-import { PATHS } from "../lib/paths";
+import { PATHS, loadKnownProjects } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
+import { validatePermissions } from "../lib/validation";
 
 type ModelUsageEntry = {
   inputTokens?: number;
@@ -64,26 +65,38 @@ const projectPaths = (projectPath: string) => ({
   mcpJson: join(projectPath, ".mcp.json"),
 });
 
-const decodeProjectPath = (encoded: string): string => {
-  return Buffer.from(encoded, "base64").toString("utf-8");
+const decodeProjectPath = async (
+  encoded: string
+): Promise<{ valid: true; path: string } | { valid: false; error: string }> => {
+  const decoded = Buffer.from(encoded, "base64").toString("utf-8");
+  if (!decoded.startsWith("/")) {
+    return { valid: false, error: "Project path must be absolute" };
+  }
+  const resolved = resolve(decoded);
+  const known = await loadKnownProjects();
+  if (!known.has(resolved)) {
+    return { valid: false, error: "Unknown project path" };
+  }
+  return { valid: true, path: resolved };
 };
 
 const projects = new Hono();
 
-// GET / — discover projects with .claude/ directories
+// GET / — discover projects from all sources
 projects.get("/", async (c) => {
   try {
     const claudeJson = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
     const projectsMap = claudeJson?.projects ?? {};
 
+    // loadKnownProjects merges .claude.json, session-meta, and project dirs
+    const allPaths = await loadKnownProjects();
+
     const results = await Promise.all(
-      Object.entries(projectsMap).map(async ([path, meta]) => {
+      Array.from(allPaths).map(async (path) => {
         if (isNodeModulesPath(path)) return null;
 
+        const meta = projectsMap[path] ?? {};
         const paths = projectPaths(path);
-        const hasClaude = await pathExists(paths.claudeDir);
-        if (!hasClaude) return null;
-
         const hasSettings = await pathExists(paths.settings);
         const hasLocalSettings = await pathExists(paths.localSettings);
         const hasMcpJson = await pathExists(paths.mcpJson);
@@ -130,7 +143,9 @@ projects.get("/", async (c) => {
 // GET /:projectPath/settings — read all project config files
 projects.get("/:projectPath/settings", async (c) => {
   try {
-    const projectPath = decodeProjectPath(c.req.param("projectPath"));
+    const decoded = await decodeProjectPath(c.req.param("projectPath"));
+    if (!decoded.valid) return c.json({ error: decoded.error }, 400);
+    const projectPath = decoded.path;
     const paths = projectPaths(projectPath);
 
     const settings = await readJsonFile<SettingsJson>(paths.settings);
@@ -166,7 +181,9 @@ projects.get("/:projectPath/settings", async (c) => {
 // PUT /:projectPath/settings — write .claude/settings.json
 projects.put("/:projectPath/settings", async (c) => {
   try {
-    const projectPath = decodeProjectPath(c.req.param("projectPath"));
+    const decoded = await decodeProjectPath(c.req.param("projectPath"));
+    if (!decoded.valid) return c.json({ error: decoded.error }, 400);
+    const projectPath = decoded.path;
     const paths = projectPaths(projectPath);
     const body = await c.req.json<{ settings: Record<string, unknown> }>();
 
@@ -187,7 +204,9 @@ projects.put("/:projectPath/settings", async (c) => {
 // PUT /:projectPath/local-settings — write .claude/settings.local.json
 projects.put("/:projectPath/local-settings", async (c) => {
   try {
-    const projectPath = decodeProjectPath(c.req.param("projectPath"));
+    const decoded = await decodeProjectPath(c.req.param("projectPath"));
+    if (!decoded.valid) return c.json({ error: decoded.error }, 400);
+    const projectPath = decoded.path;
     const paths = projectPaths(projectPath);
     const body = await c.req.json<{ settings: Record<string, unknown> }>();
 
@@ -208,7 +227,9 @@ projects.put("/:projectPath/local-settings", async (c) => {
 // PUT /:projectPath/hooks — update hooks in .claude/settings.json
 projects.put("/:projectPath/hooks", async (c) => {
   try {
-    const projectPath = decodeProjectPath(c.req.param("projectPath"));
+    const decoded = await decodeProjectPath(c.req.param("projectPath"));
+    if (!decoded.valid) return c.json({ error: decoded.error }, 400);
+    const projectPath = decoded.path;
     const paths = projectPaths(projectPath);
     const body = await c.req.json<{
       event: string;
@@ -248,22 +269,22 @@ projects.put("/:projectPath/hooks", async (c) => {
 // PUT /:projectPath/permissions — update permissions in .claude/settings.local.json
 projects.put("/:projectPath/permissions", async (c) => {
   try {
-    const projectPath = decodeProjectPath(c.req.param("projectPath"));
+    const decoded = await decodeProjectPath(c.req.param("projectPath"));
+    if (!decoded.valid) return c.json({ error: decoded.error }, 400);
+    const projectPath = decoded.path;
     const paths = projectPaths(projectPath);
     const body = await c.req.json<{ allow: string[] }>();
 
-    if (!Array.isArray(body.allow)) {
-      return c.json(
-        { error: "Invalid request: allow array required" },
-        400
-      );
+    const permResult = validatePermissions(body.allow);
+    if (!permResult.valid) {
+      return c.json({ error: permResult.error }, 400);
     }
 
     await ensureDir(paths.claudeDir);
     const localSettings =
       (await readJsonFile<LocalSettingsJson>(paths.localSettings)) ?? {};
 
-    localSettings.permissions = { allow: body.allow };
+    localSettings.permissions = { allow: permResult.value };
     await writeJsonFile(paths.localSettings, localSettings);
 
     return c.json({ ok: true });

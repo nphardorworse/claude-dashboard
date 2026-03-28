@@ -3,6 +3,10 @@ import type { PluginInfo, SkillInfo, HooksMap } from "../../../shared/types";
 import { buildScopedUrl } from "../../lib/api";
 import { Toggle } from "../shared/Toggle";
 import { Badge } from "../shared/Badge";
+import { Button } from "~/client/components/ui/button";
+import { Card, CardContent } from "~/client/components/ui/card";
+import { Input } from "~/client/components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "~/client/components/ui/tabs";
 
 type EditorMode = "create" | "edit";
 type EditorTab = "plugins" | "skills" | "hooks" | "mcp";
@@ -74,19 +78,22 @@ const PluginRow = ({ plugin, checked, onToggle }: PluginRowProps) => {
 type SkillRowProps = {
   skill: SkillInfo;
   checked: boolean;
+  parentPluginEnabled: boolean;
   onToggle: (id: string, checked: boolean) => void;
 };
 
-const SkillRow = ({ skill, checked, onToggle }: SkillRowProps) => {
+const SkillRow = ({ skill, checked, parentPluginEnabled, onToggle }: SkillRowProps) => {
   const handleChange = useCallback(
     (val: boolean) => onToggle(skill.id, val),
     [onToggle, skill.id]
   );
 
+  const effectiveChecked = parentPluginEnabled ? checked : false;
+
   return (
     <div
       className={`flex items-center justify-between gap-3 rounded-xl bg-[var(--overlay-faint)] px-4 py-3 ring-1 ring-[var(--border-hairline)] transition-snappy ${
-        checked ? "opacity-100" : "opacity-40"
+        effectiveChecked ? "opacity-100" : "opacity-40"
       }`}
     >
       <div className="min-w-0 flex-1">
@@ -97,6 +104,9 @@ const SkillRow = ({ skill, checked, onToggle }: SkillRowProps) => {
           {skill.pluginName && (
             <Badge label={skill.pluginName} variant="info" />
           )}
+          {!parentPluginEnabled && (
+            <span className="text-[10px] text-zinc-600">plugin disabled</span>
+          )}
         </div>
         {skill.description && (
           <p className="mt-0.5 truncate text-[11px] text-zinc-500">
@@ -105,7 +115,7 @@ const SkillRow = ({ skill, checked, onToggle }: SkillRowProps) => {
         )}
       </div>
       <div className="shrink-0">
-        <Toggle checked={checked} onChange={handleChange} />
+        <Toggle checked={effectiveChecked} onChange={handleChange} disabled={!parentPluginEnabled} />
       </div>
     </div>
   );
@@ -187,7 +197,7 @@ const SearchIcon = () => (
   </svg>
 );
 
-/* ─── Tab bar ─────────────────────────────────── */
+/* ─── Tab config ──────────────────────────────── */
 
 const TABS: { key: EditorTab; label: string }[] = [
   { key: "plugins", label: "Plugins" },
@@ -195,35 +205,6 @@ const TABS: { key: EditorTab; label: string }[] = [
   { key: "hooks", label: "Hooks" },
   { key: "mcp", label: "MCP" },
 ];
-
-const TabBar = ({
-  activeTab,
-  onChange,
-  counts,
-}: {
-  activeTab: EditorTab;
-  onChange: (tab: EditorTab) => void;
-  counts: Record<EditorTab, number>;
-}) => (
-  <div className="flex gap-1 rounded-lg bg-[var(--overlay-faint)] p-1">
-    {TABS.map(({ key, label }) => (
-      <button
-        key={key}
-        onClick={() => onChange(key)}
-        className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-snappy ${
-          activeTab === key
-            ? "bg-[var(--overlay-medium)] text-zinc-100 shadow-sm"
-            : "text-zinc-500 hover:text-zinc-300"
-        }`}
-      >
-        {label}
-        <span className="rounded-full bg-[var(--overlay-subtle)] px-1.5 py-0.5 text-[10px] text-zinc-400">
-          {counts[key]}
-        </span>
-      </button>
-    ))}
-  </div>
-);
 
 /* ─── Editor ──────────────────────────────────── */
 
@@ -255,7 +236,7 @@ export const ProfileEditor = ({
   const [availableSkills, setAvailableSkills] = useState<SkillInfo[]>([]);
 
   // Hooks state
-  const [hooksMap, setHooksMap] = useState<HooksMap>(initialHooks);
+  const [hooksMap, _setHooksMap] = useState<HooksMap>(initialHooks);
   const [includedHookEvents, setIncludedHookEvents] = useState<Set<string>>(
     new Set(Object.keys(initialHooks))
   );
@@ -318,7 +299,19 @@ export const ProfileEditor = ({
 
   const handlePluginToggle = useCallback((id: string, checked: boolean) => {
     setEnabledPlugins((prev) => ({ ...prev, [id]: checked }));
-  }, []);
+
+    // Cascade: toggle all skills belonging to this plugin
+    const childSkills = availableSkills.filter((s) => s.pluginId === id);
+    if (childSkills.length > 0) {
+      setEnabledSkills((prev) => {
+        const next = { ...prev };
+        for (const s of childSkills) {
+          next[s.id] = checked;
+        }
+        return next;
+      });
+    }
+  }, [availableSkills]);
 
   const handleSkillToggle = useCallback((id: string, checked: boolean) => {
     setEnabledSkills((prev) => ({ ...prev, [id]: checked }));
@@ -505,40 +498,38 @@ export const ProfileEditor = ({
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold tracking-tight text-zinc-100">{title}</h2>
         <div className="flex gap-2">
-          <button
+          <Button
             onClick={onCancel}
             disabled={isSaving}
-            className="rounded-lg bg-[var(--overlay-subtle)] px-4 py-2 text-sm font-medium text-zinc-300 ring-1 ring-[var(--border-hairline)] transition-snappy hover:bg-[var(--overlay-medium)]"
+            variant="secondary"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={handleSubmit}
             disabled={isSaving}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-snappy hover:bg-blue-500 disabled:opacity-50"
           >
             {isSaving ? "Saving..." : isEditMode ? "Update Profile" : "Create Profile"}
-          </button>
+          </Button>
         </div>
       </div>
 
       {error && <p className="text-xs text-red-400">{error}</p>}
 
       {/* Name + Description */}
-      <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-        <div className="flex flex-col gap-4 rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-5 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+      <Card>
+        <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="profile-name" className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
               Profile Name
             </label>
-            <input
+            <Input
               id="profile-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={isEditMode}
               placeholder="e.g. my-mobile-setup"
-              className="rounded-lg border border-[var(--border-hairline)] bg-[var(--overlay-subtle)] px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition-snappy focus:border-blue-500/50 disabled:opacity-50"
             />
           </div>
 
@@ -546,24 +537,34 @@ export const ProfileEditor = ({
             <label htmlFor="profile-description" className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
               Description
             </label>
-            <input
+            <Input
               id="profile-description"
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What this profile is for..."
-              className="rounded-lg border border-[var(--border-hairline)] bg-[var(--overlay-subtle)] px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition-snappy focus:border-blue-500/50"
             />
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Tabbed content */}
-      <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-        <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-5 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+      <Card>
+        <CardContent>
           {/* Toolbar */}
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <TabBar activeTab={activeTab} onChange={setActiveTab} counts={counts} />
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as EditorTab)}>
+              <TabsList>
+                {TABS.map(({ key, label }) => (
+                  <TabsTrigger key={key} value={key}>
+                    {label}
+                    <span className="rounded-full bg-[var(--overlay-subtle)] px-1.5 py-0.5 text-[10px] text-zinc-400">
+                      {counts[key]}
+                    </span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
 
             <div className="flex items-center gap-3">
               <span className="text-xs text-zinc-500">{selectedCountLabel}</span>
@@ -588,12 +589,12 @@ export const ProfileEditor = ({
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">
                 <SearchIcon />
               </span>
-              <input
+              <Input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="w-full rounded-lg border border-[var(--border-hairline)] bg-[var(--overlay-subtle)] py-2 pl-9 pr-3 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition-snappy focus:border-blue-500/50"
+                className="pl-9"
               />
             </div>
           )}
@@ -630,6 +631,7 @@ export const ProfileEditor = ({
                       key={skill.id}
                       skill={skill}
                       checked={!!enabledSkills[skill.id]}
+                      parentPluginEnabled={!skill.pluginId || !!enabledPlugins[skill.pluginId]}
                       onToggle={handleSkillToggle}
                     />
                   ))}
@@ -687,8 +689,8 @@ export const ProfileEditor = ({
               )}
             </div>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

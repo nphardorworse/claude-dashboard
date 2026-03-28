@@ -12,16 +12,12 @@ import type {
   HealthWarning,
   TopPluginByCost,
 } from "../../shared/types";
+import type { ClaudeJson, ProjectEntry } from "../lib/types";
 
 type SettingsJson = {
   enabledPlugins?: Record<string, boolean>;
   enabledSkills?: Record<string, boolean>;
   hooks?: Record<string, unknown[]>;
-  [key: string]: unknown;
-};
-
-type ClaudeJson = {
-  mcpServers?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -78,16 +74,27 @@ const detectActiveProfile = async (
 
       if (!isExactMatch(data.enabledSkills ?? {}, settingsSkills)) continue;
 
-      const profileHooksStr = JSON.stringify(data.hooks ?? {}, Object.keys(data.hooks ?? {}).sort());
-      const settingsHooksStr = JSON.stringify(settingsHooks, Object.keys(settingsHooks).sort());
+      const stableStringify = (obj: unknown): string =>
+        JSON.stringify(obj, (_, v) =>
+          v && typeof v === "object" && !Array.isArray(v)
+            ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+            : v
+        );
+      const profileHooksStr = stableStringify(data.hooks ?? {});
+      const settingsHooksStr = stableStringify(settingsHooks);
       if (profileHooksStr !== settingsHooksStr) continue;
 
+      // MCP exact match: size + membership
+      const profileEnabled = data.enabledMcpServers ?? [];
+      const profileDisabled = data.disabledMcpServers ?? [];
+      if (profileEnabled.length !== enabledMcpNames.size) continue;
+      if (profileDisabled.length !== disabledMcpNames.size) continue;
       let mcpMatch = true;
-      for (const name of data.enabledMcpServers ?? []) {
+      for (const name of profileEnabled) {
         if (!enabledMcpNames.has(name)) { mcpMatch = false; break; }
       }
       if (!mcpMatch) continue;
-      for (const name of data.disabledMcpServers ?? []) {
+      for (const name of profileDisabled) {
         if (!disabledMcpNames.has(name)) { mcpMatch = false; break; }
       }
       if (!mcpMatch) continue;
@@ -255,6 +262,17 @@ health.get("/", async (c) => {
     const enabledSkills = settings?.enabledSkills ?? {};
     const enabledMcpNames = new Set(Object.keys(claudeJson?.mcpServers ?? {}));
     const disabledMcpNames = new Set(Object.keys(claudeJson?.disabledMcpServers ?? {}));
+
+    // Apply project-scoped MCP overrides
+    if (projectPath && claudeJson?.projects) {
+      const projEntry = claudeJson.projects[projectPath] as ProjectEntry | undefined;
+      if (projEntry?.disabledMcpServers) {
+        for (const n of projEntry.disabledMcpServers) {
+          enabledMcpNames.delete(n);
+          disabledMcpNames.add(n);
+        }
+      }
+    }
 
     const activeProfile = await detectActiveProfile(
       enabledPlugins,

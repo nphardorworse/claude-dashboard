@@ -48,13 +48,13 @@ const BEGINNER_CONCEPTS: ConceptItem[] = [
     icon: <HooksIcon />,
     title: "Hook",
     description:
-      'Hooks are shell commands that run automatically when certain events happen \u2014 like before a tool is used, after a message is sent, or when a session starts. They\'re useful for enforcing rules (e.g., "always run linting before committing").',
+      'Hooks are shell commands that run automatically when certain events happen \u2014 like before a tool is used, when a prompt is submitted, or when a session starts. They\'re useful for enforcing rules (e.g., "always run linting before committing").',
   },
   {
     icon: <ProfilesIcon />,
     title: "Profile",
     description:
-      'A profile is a saved set of enabled plugins \u2014 like a preset. Instead of toggling 20 plugins one by one, you switch to a profile and all the right plugins activate. The dashboard comes with presets like "core" (minimal), "mobile" (React Native focused), "web", and "full".',
+      'A profile is a dashboard feature — not built into Claude Code itself. It\'s a saved set of enabled plugins, like a preset. Instead of toggling 20 plugins one by one, you switch to a profile and all the right plugins activate. The dashboard comes with presets like "core" (minimal), "mobile" (React Native focused), "web", and "full".',
   },
 ];
 
@@ -87,7 +87,7 @@ const ADVANCED_CONCEPTS: ConceptItem[] = [
     icon: <ProfilesIcon />,
     title: "Profile",
     description:
-      "JSON files in ~/.claude/profiles/ containing { enabledPlugins: string[] }. Switching a profile overwrites the global enabledPlugins list in settings.json. All skills and bundled MCPs of the enabled plugins become active. CLI shortcut: claude-profile <name>.",
+      "A dashboard feature (not native to Claude Code). JSON files in ~/.claude/profiles/ containing { enabledPlugins: string[] }. Switching a profile overwrites the global enabledPlugins list in settings.json. All skills and bundled MCPs of the enabled plugins become active.",
   },
 ];
 
@@ -119,7 +119,7 @@ const FILE_MAP_ROWS: FileMapRow[] = [
     file: "~/.claude/plugins/cache/<plugin>/",
     scope: "User",
   },
-  { what: "Profiles", file: "~/.claude/profiles/<name>.json", scope: "User" },
+  { what: "Profiles (dashboard)", file: "~/.claude/profiles/<name>.json", scope: "User" },
   {
     what: "Project settings",
     file: "<project>/.claude/settings.json",
@@ -196,7 +196,7 @@ const ConceptGrid = ({ level }: { level: Level }) => {
   ));
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {cards}
     </div>
   );
@@ -209,7 +209,7 @@ const ConceptGrid = ({ level }: { level: Level }) => {
 const ProblemSection = ({ level }: { level: Level }) => {
   if (level === "beginner") {
     return (
-      <div className="text-[13px] text-zinc-400 leading-relaxed space-y-3">
+      <div className="text-[13px] text-zinc-400 leading-relaxed space-y-3" style={{ textWrap: "pretty" }}>
         <p>
           Claude Code is powerful out of the box, but as you add plugins, MCP
           servers, custom skills, and hooks, things get complicated fast. You end
@@ -227,7 +227,7 @@ const ProblemSection = ({ level }: { level: Level }) => {
   }
 
   return (
-    <div className="text-[13px] text-zinc-400 leading-relaxed space-y-3">
+    <div className="text-[13px] text-zinc-400 leading-relaxed space-y-3" style={{ textWrap: "pretty" }}>
       <p>
         Claude Code's configuration is spread across 6+ file locations with a
         complex resolution order (project overrides global, personal overrides
@@ -316,8 +316,9 @@ const TokenEconomicsSection = ({ level }: { level: Level }) => {
             .mcp.json (tool definitions).
           </li>
           <li>
-            Sums character counts, applies the 3.5:1 ratio, and adds baseline
-            overhead (~2k tokens for Claude Code's own system prompt).
+            Sums character counts and applies the 3.5:1 ratio. Only counts
+            enabled skills within each enabled plugin — disabling a skill
+            reduces the reported overhead.
           </li>
           <li>
             Reports per-plugin, per-skill, and per-MCP-server token estimates
@@ -347,8 +348,8 @@ const InsightsSection = ({ level }: { level: Level }) => {
         <div>
           <h3 className="text-zinc-100 font-semibold mb-1">Health Scores</h3>
           <p>
-            The Overview page shows 4 health cards: tokens per turn, active
-            plugins count, MCP server health, and warnings count. Green means
+            The Overview page shows health cards: tokens per turn, active
+            plugins count, MCP server count, and warnings. Green means
             healthy, amber means worth investigating, red means action needed.
             These are heuristic thresholds, not hard rules.
           </p>
@@ -356,10 +357,10 @@ const InsightsSection = ({ level }: { level: Level }) => {
         <div>
           <h3 className="text-zinc-100 font-semibold mb-1">Warnings</h3>
           <p>
-            The dashboard generates warnings for common issues: MCP servers that
-            fail health checks, plugins with unusually high token costs, missing
-            config files, duplicate MCP server definitions across sources, and
-            more. Each warning includes a suggestion for how to fix it.
+            The dashboard generates warnings for common issues: high aggregate
+            token usage from enabled plugins, duplicate plugin entries from
+            multiple sources, and high hook counts that may slow things down.
+            Each warning includes a suggestion for how to fix it.
           </p>
         </div>
         <div>
@@ -386,19 +387,19 @@ const InsightsSection = ({ level }: { level: Level }) => {
         <p>
           Four composite metrics derived from local config state: tokens/turn
           (sum of all active context), plugin count (enabled vs total), MCP
-          health (stdio process ping + HTTP endpoint check), warning count
-          (aggregated from all analyzers). Thresholds: green {"<"} 20k
-          tokens/turn, amber {"<"} 40k, red above.
+          server count, and warning count. Thresholds scale with your
+          context window (200k or 1M): green {"<"} 15%, amber 15–40%,
+          red {">"} 40% of window size. Auto-detects from your most-used
+          model, or set manually in the Usage tab.
         </p>
       </div>
       <div>
         <h3 className="text-zinc-100 font-semibold mb-1">Warnings</h3>
         <p>
-          Static analysis of config state. Detection rules: MCP health check
-          failure (process not running or HTTP timeout), duplicate MCP
-          definitions across source origins, plugins with {">"} 5k tokens,
-          orphaned MCP references (plugin disabled but MCP still in global
-          config), missing expected files, conflicting project/global overrides.
+          Static analysis of config state. Current detection rules: high
+          aggregate token usage ({">"} 150k tokens/turn), duplicate plugin
+          entries enabled from multiple marketplaces, and high hook event
+          count ({">"} 5 event types active).
         </p>
       </div>
       <div>
@@ -494,7 +495,8 @@ export const HowItWorksPage = () => {
 
   return (
     <PageShell title="How it Works">
-      <p className="text-zinc-400 text-[13px] mb-6">
+      <div className="max-w-2xl">
+      <p className="text-zinc-400 text-[13px] mb-6" style={{ textWrap: "pretty" }}>
         A plain-language guide to what this dashboard does, how Claude Code's
         plugin ecosystem fits together, and how to get the most out of it.
       </p>
@@ -545,6 +547,7 @@ export const HowItWorksPage = () => {
         <SectionBlock title="Quick Start">
           <QuickStartSteps level={level} />
         </SectionBlock>
+      </div>
       </div>
     </PageShell>
   );

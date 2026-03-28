@@ -1,12 +1,23 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import type { PlanLimits } from "../../../shared/types";
 import { PLAN_PRESETS } from "../../../shared/plan-presets";
-import { useToast } from "../shared/Toast";
+import { useToast } from "../shared/use-toast";
+import { Card, CardContent } from "~/client/components/ui/card";
+import { Input } from "~/client/components/ui/input";
+import { Button } from "~/client/components/ui/button";
+
+type ContextWindowData = {
+  detected: number | null;
+  override: number | null;
+  effective: number;
+};
 
 type LimitConfigCardProps = {
   limits: PlanLimits;
   isLoading: boolean;
   onSave: (limits: PlanLimits) => Promise<void>;
+  contextWindow: ContextWindowData | null;
+  onSaveContextWindow: (size: number | null) => Promise<void>;
 };
 
 const parseLimitInput = (raw: string): number | null => {
@@ -54,7 +65,7 @@ const parseDatetimeInput = (val: string): string | null => {
   return d.toISOString();
 };
 
-export const LimitConfigCard = ({ limits, isLoading, onSave }: LimitConfigCardProps) => {
+export const LimitConfigCard = ({ limits, isLoading, onSave, contextWindow, onSaveContextWindow }: LimitConfigCardProps) => {
   const { toast } = useToast();
   const [sessionMsgDraft, setSessionMsgDraft] = useState("");
   const [weeklyMsgDraft, setWeeklyMsgDraft] = useState("");
@@ -139,8 +150,8 @@ export const LimitConfigCard = ({ limits, isLoading, onSave }: LimitConfigCardPr
   if (isLoading) return null;
 
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-5 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card>
+      <CardContent>
         <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
           Configure Limits
         </p>
@@ -151,6 +162,36 @@ export const LimitConfigCard = ({ limits, isLoading, onSave }: LimitConfigCardPr
         {/* Plan preset selector */}
         <div className="mt-3 flex flex-wrap gap-2">
           {presetButtons}
+        </div>
+
+        {/* Context window selector */}
+        <div className="mt-4 border-t border-[var(--border-hairline)] pt-4">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+            Context Window
+          </p>
+          <p className="mb-3 text-[11px] leading-relaxed text-zinc-500">
+            Token health thresholds scale with your context window. Auto-detects from your most-used model, or set manually.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <ContextWindowButton
+              label="Auto"
+              subtitle={contextWindow?.detected ? `${Math.round(contextWindow.detected / 1000)}k detected` : "200k default"}
+              isActive={contextWindow?.override == null}
+              onSelect={() => onSaveContextWindow(null)}
+            />
+            <ContextWindowButton
+              label="200k"
+              subtitle="Sonnet / Haiku"
+              isActive={contextWindow?.override === 200_000}
+              onSelect={() => onSaveContextWindow(200_000)}
+            />
+            <ContextWindowButton
+              label="1M"
+              subtitle="Opus 4.6"
+              isActive={contextWindow?.override === 1_000_000}
+              onSelect={() => onSaveContextWindow(1_000_000)}
+            />
+          </div>
         </div>
 
         {/* Message limits */}
@@ -205,21 +246,15 @@ export const LimitConfigCard = ({ limits, isLoading, onSave }: LimitConfigCardPr
 
         {/* Buttons */}
         <div className="mt-4 flex justify-end gap-2">
-          <button
-            onClick={handleClear}
-            className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-zinc-500 transition-snappy hover:bg-[var(--overlay-subtle)] hover:text-zinc-300"
-          >
+          <Button variant="ghost" size="sm" onClick={handleClear}>
             Clear
-          </button>
-          <button
-            onClick={handleSave}
-            className="rounded-lg bg-blue-500/20 px-3 py-1.5 text-[11px] font-medium text-blue-400 ring-1 ring-blue-500/30 transition-snappy hover:bg-blue-500/30"
-          >
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleSave}>
             Save
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };
 
@@ -239,7 +274,7 @@ const PresetButton = ({ preset, isActive, onSelect }: PresetButtonProps) => {
   return (
     <button
       onClick={handleClick}
-      className={`flex flex-col items-start rounded-lg border px-3 py-2 text-left transition-snappy ${
+      className={`flex flex-col items-start rounded-lg border px-3 py-2 text-left transition-snappy active:scale-[0.96] ${
         isActive
           ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
           : "border-[var(--border-hairline)] bg-[var(--overlay-faint)] text-zinc-400 hover:border-zinc-600 hover:text-zinc-300"
@@ -247,7 +282,7 @@ const PresetButton = ({ preset, isActive, onSelect }: PresetButtonProps) => {
     >
       <span className="text-[11px] font-semibold">{preset.label}</span>
       <span className="text-[9px] text-zinc-500">{preset.price} · {preset.multiplier}</span>
-      <span className="mt-0.5 font-mono text-[10px]">~{preset.sessionMessageLimit} msg/5hr</span>
+      <span className="mt-0.5 font-mono text-[10px] tabular-nums">~{preset.sessionMessageLimit} msg/5hr</span>
     </button>
   );
 };
@@ -268,15 +303,38 @@ const LimitInput = ({ label, type, value, placeholder, onChange, suffix }: Limit
     <label className="w-40 shrink-0 text-[11px] font-medium text-zinc-400">
       {label}
     </label>
-    <input
+    <Input
       type={type}
       value={value}
       placeholder={placeholder}
       onChange={onChange}
-      className="w-full rounded-lg border border-[var(--border-hairline)] bg-[var(--overlay-faint)] px-3 py-1.5 font-mono text-[12px] text-zinc-200 outline-none transition-snappy placeholder:text-zinc-500 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+      className="font-mono text-[12px]"
     />
     {suffix && (
       <span className="shrink-0 text-[10px] text-zinc-500">{suffix}</span>
     )}
   </div>
+);
+
+/* ─── Context window button ────────────────── */
+
+type ContextWindowButtonProps = {
+  label: string;
+  subtitle: string;
+  isActive: boolean;
+  onSelect: () => void;
+};
+
+const ContextWindowButton = ({ label, subtitle, isActive, onSelect }: ContextWindowButtonProps) => (
+  <button
+    onClick={onSelect}
+    className={`flex flex-col items-start rounded-lg border px-3 py-2 text-left transition-snappy active:scale-[0.96] ${
+      isActive
+        ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
+        : "border-[var(--border-hairline)] bg-[var(--overlay-faint)] text-zinc-400 hover:border-zinc-600 hover:text-zinc-300"
+    }`}
+  >
+    <span className="text-[11px] font-semibold">{label}</span>
+    <span className="text-[9px] text-zinc-500">{subtitle}</span>
+  </button>
 );

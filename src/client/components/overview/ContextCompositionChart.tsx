@@ -113,7 +113,7 @@ const ColumnBar = ({ comp, maxTotal }: ColumnBarProps) => {
     <div className="group/col relative flex flex-1 flex-col items-center gap-1">
       <div className="flex w-full items-end justify-center" style={{ height: 100 }}>
         <div
-          className="flex w-full flex-col overflow-hidden rounded-t-sm transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
+          className="flex w-full flex-col overflow-hidden rounded-t-sm transition-[height] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
           style={{ height: `${Math.max(heightPct, 2)}%` }}
         >
           {segments.map((seg) => (
@@ -130,7 +130,7 @@ const ColumnBar = ({ comp, maxTotal }: ColumnBarProps) => {
       </span>
 
       {/* Hover tooltip */}
-      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-lg bg-[var(--overlay-medium)] px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover/col:opacity-100">
+      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-lg bg-zinc-900 px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover/col:opacity-100">
         {comp.userPrompt && (
           <p className="mb-1 max-w-[240px] truncate text-[10px] font-medium text-zinc-200">
             {comp.userPrompt}

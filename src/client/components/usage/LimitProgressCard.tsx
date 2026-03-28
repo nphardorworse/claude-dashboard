@@ -1,5 +1,6 @@
 import { formatTokens, formatResetTime } from "../../lib/format";
 import { getLimitBarColor, getLimitGlow } from "../../lib/limit-colors";
+import { Card, CardContent } from "~/client/components/ui/card";
 
 type LimitProgressCardProps = {
   title: string;
@@ -36,8 +37,8 @@ export const LimitProgressCard = ({
   const clampedPct = messagePercentage != null ? Math.min(Math.max(messagePercentage, 2), 100) : 0;
 
   return (
-    <div className={`rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)] ${glowClass}`}>
-      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-5 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card className={glowClass}>
+      <CardContent>
         {/* Header */}
         <div className="flex items-center justify-between">
           <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
@@ -52,7 +53,7 @@ export const LimitProgressCard = ({
 
         {/* Main value — messages (rate-limited) */}
         <div className="mt-3 flex items-baseline gap-2">
-          <span className={`text-2xl font-bold tracking-tight ${valueColor}`}>
+          <span className={`text-2xl font-bold tracking-tight tabular-nums ${valueColor}`}>
             {messages}
           </span>
           {hasLimit ? (
@@ -63,7 +64,7 @@ export const LimitProgressCard = ({
             <span className="text-[13px] text-zinc-500">messages</span>
           )}
           {messagePercentage != null && (
-            <span className={`ml-auto font-mono text-sm font-semibold ${valueColor}`}>
+            <span className={`ml-auto font-mono text-sm font-semibold tabular-nums ${valueColor}`}>
               {Math.round(messagePercentage)}%
             </span>
           )}
@@ -72,7 +73,7 @@ export const LimitProgressCard = ({
         {/* Progress bar — always visible */}
         <div className="mt-3 h-[5px] w-full overflow-hidden rounded-full bg-[var(--overlay-subtle)]">
           <div
-            className={`h-full rounded-full transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${hasLimit ? barColor : "bg-zinc-600"}`}
+            className={`h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${hasLimit ? barColor : "bg-zinc-600"}`}
             style={{ width: hasLimit ? `${clampedPct}%` : `${Math.min(messages > 0 ? 100 : 0, 100)}%` }}
           />
         </div>
@@ -81,7 +82,7 @@ export const LimitProgressCard = ({
         <p className="mt-2.5 text-[11px] text-zinc-500">
           {formatTokens(outputTokens)} out · {formatTokens(inputTokens)} in · {totalSessions} session{totalSessions !== 1 ? "s" : ""}
         </p>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };

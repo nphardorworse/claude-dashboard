@@ -1,5 +1,7 @@
 import { useCallback, useState } from "react";
 import type { HooksMap, ProfileEntry } from "../../../shared/types";
+import { Button } from "~/client/components/ui/button";
+import { Card, CardContent } from "~/client/components/ui/card";
 
 type ProfileCardProps = {
   name: string;
@@ -83,7 +85,7 @@ const ActivateButton = ({
     <button
       onClick={onClick}
       disabled={isSwitching}
-      className="flex-1 rounded-lg bg-[var(--overlay-medium)] py-2 text-sm font-medium text-zinc-200 transition-snappy hover:bg-[var(--border-accent)] disabled:cursor-wait disabled:opacity-50"
+      className="flex-1 rounded-lg bg-[var(--overlay-medium)] py-2 text-sm font-medium text-zinc-200 transition-snappy hover:bg-[var(--border-accent)] active:scale-[0.96] disabled:cursor-wait disabled:opacity-50"
     >
       {isSwitching ? "Switching..." : "Activate"}
     </button>
@@ -116,23 +118,25 @@ const ConfirmDeleteOverlay = ({
   onCancel: () => void;
   isDeleting: boolean;
 }) => (
-  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-[calc(1rem-1px)] bg-[var(--surface-raised)]/95 backdrop-blur-sm">
+  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl bg-[var(--surface-raised)]/95 backdrop-blur-sm">
     <p className="text-sm font-medium text-zinc-100">Delete this profile?</p>
     <div className="flex gap-2">
-      <button
+      <Button
         onClick={onConfirm}
         disabled={isDeleting}
-        className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-snappy hover:bg-red-500 disabled:opacity-50"
+        variant="destructive"
+        size="sm"
       >
         {isDeleting ? "Deleting..." : "Delete"}
-      </button>
-      <button
+      </Button>
+      <Button
         onClick={onCancel}
         disabled={isDeleting}
-        className="rounded-lg bg-[var(--overlay-medium)] px-3 py-1.5 text-xs font-medium text-zinc-300 transition-snappy hover:bg-[var(--border-accent)]"
+        variant="secondary"
+        size="sm"
       >
         Cancel
-      </button>
+      </Button>
     </div>
   </div>
 );
@@ -206,10 +210,8 @@ export const ProfileCard = ({
     : "ring-[var(--border-hairline)] hover:ring-[var(--border-accent)]";
 
   return (
-    <div
-      className={`rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 transition-snappy ${borderClass}`}
-    >
-      <div className="relative flex flex-col gap-3 rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-5 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card className={`h-full ${borderClass}`}>
+      <CardContent className="relative flex h-full flex-col gap-3">
         {isConfirming && (
           <ConfirmDeleteOverlay
             onConfirm={handleConfirmDelete}
@@ -229,17 +231,18 @@ export const ProfileCard = ({
 
           {/* Actions */}
           <div className="flex items-center gap-1">
-            <button
+            <Button
               onClick={handleEdit}
               title="Edit profile"
-              className="flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-snappy hover:bg-[var(--overlay-subtle)] hover:text-zinc-300"
+              variant="ghost"
+              size="icon-lg"
             >
               <PencilIcon />
-            </button>
+            </Button>
             <button
               onClick={handleDeleteClick}
               title="Delete profile"
-              className="flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-snappy hover:bg-red-500/10 hover:text-red-400"
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-snappy hover:bg-red-500/10 hover:text-red-400 active:scale-[0.96]"
             >
               <TrashIcon />
             </button>
@@ -263,7 +266,7 @@ export const ProfileCard = ({
             />
           </div>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };

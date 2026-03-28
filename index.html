@@ -13,6 +13,7 @@
     />
   </head>
   <body class="text-zinc-100 antialiased">
+    <script>if(localStorage.getItem("claude-dashboard-theme")!=="light")document.documentElement.classList.add("dark")</script>
     <div id="root"></div>
     <script type="module" src="/src/client/main.tsx"></script>
   </body>

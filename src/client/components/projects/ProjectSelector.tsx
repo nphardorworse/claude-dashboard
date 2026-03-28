@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { ProjectInfo } from "../../../shared/types";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "~/client/components/ui/select";
 
 type ProjectSelectorProps = {
   projectPath: string | null;
@@ -17,13 +18,7 @@ const fetchProjects = async (): Promise<ProjectInfo[]> => {
   }
 };
 
-const ProjectOption = ({ project }: { project: ProjectInfo }) => {
-  return (
-    <option value={project.path} title={project.path}>
-      {project.name}
-    </option>
-  );
-};
+const GLOBAL_VALUE = "__global__";
 
 export const ProjectSelector = ({
   projectPath,
@@ -41,9 +36,8 @@ export const ProjectSelector = ({
   }, [loadProjects]);
 
   const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const value = e.target.value;
-      onSelect(value === "" ? null : value);
+    (value: string) => {
+      onSelect(value === GLOBAL_VALUE ? null : value);
     },
     [onSelect]
   );
@@ -56,20 +50,24 @@ export const ProjectSelector = ({
 
   return (
     <div className="px-4 py-3 border-b border-[var(--border-hairline)]">
-      <label className="mb-1.5 block text-xs font-medium text-zinc-400">
+      <label htmlFor="project-scope-select" className="mb-1.5 block text-xs font-medium text-zinc-400">
         Scope
       </label>
-      <select
-        value={projectPath ?? ""}
-        onChange={handleChange}
-        className="w-full rounded-md border border-[var(--border-accent)] bg-[var(--surface-raised)] px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-blue-500"
-        title={selectedLabel ?? "Global settings"}
-      >
-        <option value="">Global</option>
-        {projects.map((project) => (
-          <ProjectOption key={project.path} project={project} />
-        ))}
-      </select>
+      <Select value={projectPath ?? GLOBAL_VALUE} onValueChange={handleChange}>
+        <SelectTrigger className="w-full" title={selectedLabel ?? "Global settings"}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem value={GLOBAL_VALUE}>Global</SelectItem>
+            {projects.map((project) => (
+              <SelectItem key={project.path} value={project.path}>
+                {project.name}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
       {projectPath && (
         <p className="mt-1 truncate text-[10px] text-zinc-500" dir="rtl" title={projectPath}>
           {projectPath}

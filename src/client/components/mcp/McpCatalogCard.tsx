@@ -1,5 +1,8 @@
 import { useCallback } from "react";
 import type { McpOrigin, McpCatalogEntry } from "../../../shared/types";
+import { PinIcon, PinOffIcon } from "../shared/NavIcons";
+import { Card, CardContent } from "~/client/components/ui/card";
+import { Button } from "~/client/components/ui/button";
 
 type McpCatalogCardProps = {
   name: string;
@@ -95,14 +98,9 @@ const PinToggle = ({
   }, [name, onPin]);
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      title={isPinned ? "Unpin" : "Pin"}
-      className="rounded-lg px-2 py-1 text-[11px] font-medium text-zinc-500 transition-snappy hover:bg-[var(--overlay-subtle)] hover:text-zinc-300 active:scale-[0.96]"
-    >
-      {isPinned ? "📌" : "○"}
-    </button>
+    <Button variant="ghost" size="icon-xs" onClick={handleClick} title={isPinned ? "Unpin" : "Pin"}>
+      {isPinned ? <PinIcon /> : <PinOffIcon />}
+    </Button>
   );
 };
 
@@ -114,25 +112,17 @@ const ActionButton = ({
   onClick: () => void;
 }) => {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-zinc-300 ring-1 ring-[var(--border-hairline)] transition-snappy hover:bg-[var(--overlay-subtle)] hover:ring-[var(--border-accent)] active:scale-[0.96]"
-    >
+    <Button variant="outline" size="xs" onClick={onClick}>
       {label}
-    </button>
+    </Button>
   );
 };
 
 const DeleteButton = ({ onClick }: { onClick: () => void }) => {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-zinc-500 transition-snappy hover:bg-red-500/10 hover:text-red-400 active:scale-[0.96]"
-    >
+    <Button variant="ghost" size="xs" onClick={onClick}>
       Delete
-    </button>
+    </Button>
   );
 };
 
@@ -167,8 +157,9 @@ const McpCatalogCard = ({
   }, [name, onDelete]);
 
   return (
-    <div className="group rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)] transition-snappy hover:ring-[var(--border-accent)]">
-      <div className="flex items-center justify-between gap-4 rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card className="group hover:ring-[var(--border-accent)]">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2.5">
             <h3 className="truncate text-[13px] font-semibold text-zinc-100">
@@ -191,8 +182,9 @@ const McpCatalogCard = ({
           )}
           {onDelete !== undefined && <DeleteButton onClick={handleDelete} />}
         </div>
-      </div>
-    </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 

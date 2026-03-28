@@ -106,10 +106,13 @@ const projectKeyFromPath = (projectPath: string): string => {
   return projectPath.split("/").join("-");
 };
 
+const SESSION_ID_RE = /^[a-f0-9-]{36,}$/;
+
 export const findSessionJsonlPath = (
   sessionId: string,
   projectPath: string
 ): string | null => {
+  if (!SESSION_ID_RE.test(sessionId)) return null;
   const key = projectKeyFromPath(projectPath);
   const filePath = join(PATHS.claudeDir, "projects", key, `${sessionId}.jsonl`);
   return filePath;

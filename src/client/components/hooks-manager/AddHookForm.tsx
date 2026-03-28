@@ -1,4 +1,8 @@
 import { useState, useCallback } from "react";
+import { Button } from "~/client/components/ui/button";
+import { Card, CardContent } from "~/client/components/ui/card";
+import { Input } from "~/client/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "~/client/components/ui/select";
 
 type AddHookFormProps = {
   availableEvents: string[];
@@ -24,8 +28,8 @@ export const AddHookForm = ({
   const [error, setError] = useState<string | null>(null);
 
   const handleEventChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      setEvent(e.target.value);
+    (value: string) => {
+      setEvent(value);
     },
     []
   );
@@ -93,11 +97,9 @@ export const AddHookForm = ({
   );
 
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-    <form
-      onSubmit={handleSubmit}
-      className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]"
-    >
+    <Card>
+      <form onSubmit={handleSubmit}>
+        <CardContent className="p-4">
       <h3 className="mb-3 text-sm font-semibold text-zinc-100">
         Add New Hook
       </h3>
@@ -105,58 +107,62 @@ export const AddHookForm = ({
       <div className="flex flex-col gap-3">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-xs text-zinc-400">Event</label>
-            <select
-              value={event}
-              onChange={handleEventChange}
-              className="w-full rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-blue-500"
-            >
-              {availableEvents.map((evt) => (
-                <option key={evt} value={evt}>
-                  {evt}
-                </option>
-              ))}
-            </select>
+            <label htmlFor="hook-event-select" className="mb-1 block text-xs text-zinc-400">Event</label>
+            <Select value={event} onValueChange={handleEventChange}>
+              <SelectTrigger id="hook-event-select" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {availableEvents.map((evt) => (
+                    <SelectItem key={evt} value={evt}>
+                      {evt}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-zinc-400">
+            <label htmlFor="hook-matcher" className="mb-1 block text-xs text-zinc-400">
               Matcher
             </label>
-            <input
+            <Input
+              id="hook-matcher"
               type="text"
               value={matcher}
               onChange={handleMatcherChange}
               placeholder="*"
-              className="w-full rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-blue-500"
             />
           </div>
         </div>
 
         <div className="grid grid-cols-[1fr_120px] gap-3">
           <div>
-            <label className="mb-1 block text-xs text-zinc-400">
+            <label htmlFor="hook-command" className="mb-1 block text-xs text-zinc-400">
               Command
             </label>
-            <input
+            <Input
+              id="hook-command"
               type="text"
               value={command}
               onChange={handleCommandChange}
               placeholder="/path/to/script.sh"
-              className="w-full rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-1.5 font-mono text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-blue-500"
+              className="font-mono"
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-zinc-400">
+            <label htmlFor="hook-timeout" className="mb-1 block text-xs text-zinc-400">
               Timeout (ms)
             </label>
-            <input
+            <Input
+              id="hook-timeout"
               type="number"
               value={timeoutStr}
               onChange={handleTimeoutChange}
               placeholder="optional"
-              className="w-full rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-blue-500"
             />
           </div>
         </div>
@@ -164,23 +170,23 @@ export const AddHookForm = ({
         {error && <p className="text-xs text-red-400">{error}</p>}
 
         <div className="flex items-center justify-end gap-2">
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={onCancel}
-            className="rounded-md px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:text-zinc-200"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
             disabled={isSubmitting || !command.trim()}
-            className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitting ? "Adding..." : "Add Hook"}
-          </button>
+          </Button>
         </div>
       </div>
-    </form>
-    </div>
+        </CardContent>
+      </form>
+    </Card>
   );
 };

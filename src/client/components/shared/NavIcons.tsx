@@ -11,6 +11,56 @@ const iconProps = {
   strokeLinejoin: "round" as const,
 };
 
+/* ─── Utility icons (used across components) ───────────────────────── */
+
+const smallIconProps = {
+  ...iconProps,
+  width: 14,
+  height: 14,
+  strokeWidth: 2,
+};
+
+/** X / close — replaces &#10005; and &times; */
+export const XIcon = ({ size = 14 }: { size?: number }) => (
+  <svg {...smallIconProps} width={size} height={size}>
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
+/** Globe — replaces &#127760; */
+export const GlobeIcon = () => (
+  <svg {...smallIconProps}>
+    <circle cx="12" cy="12" r="10" />
+    <line x1="2" y1="12" x2="22" y2="12" />
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+  </svg>
+);
+
+/** Folder — replaces &#128193; */
+export const FolderIcon = () => (
+  <svg {...smallIconProps}>
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+  </svg>
+);
+
+/** Pin (filled) — replaces 📌 */
+export const PinIcon = () => (
+  <svg {...smallIconProps}>
+    <line x1="12" y1="17" x2="12" y2="22" />
+    <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.89A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.89A2 2 0 0 0 5 15.24Z" />
+  </svg>
+);
+
+/** Pin outline (unfilled) — replaces ○ */
+export const PinOffIcon = () => (
+  <svg {...smallIconProps} strokeWidth={1.5}>
+    <line x1="12" y1="17" x2="12" y2="22" />
+    <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.89A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.89A2 2 0 0 0 5 15.24Z" />
+    <line x1="2" y1="2" x2="22" y2="22" />
+  </svg>
+);
+
 export const OverviewIcon = () => (
   <svg {...iconProps}>
     <rect x="3" y="3" width="7" height="7" rx="1" />

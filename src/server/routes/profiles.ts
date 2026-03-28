@@ -2,8 +2,10 @@ import { Hono } from "hono";
 import { readdir, unlink } from "fs/promises";
 import { dirname, join } from "path";
 import { PATHS, getProjectPath, getSettingsPath } from "../lib/paths";
-import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
-import type { HookEntry, HooksMap, ProfileEntry } from "../../shared/types";
+import { readJsonFile, writeJsonFile, ensureDir, createBackup } from "../lib/file-io";
+import { scanPlugins } from "../lib/plugin-scanner";
+import { scanSkills } from "../lib/skill-scanner";
+import type { HooksMap, ProfileEntry } from "../../shared/types";
 import type { ClaudeJson, ProjectEntry } from "../lib/types";
 
 type ProfileFile = {
@@ -43,6 +45,13 @@ const isToggleMapMatch = (
   return true;
 };
 
+const stableStringify = (obj: unknown): string =>
+  JSON.stringify(obj, (_, v) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+      : v
+  );
+
 const isHooksMatch = (
   profileHooks: HooksMap,
   settingsHooks: HooksMap
@@ -51,8 +60,7 @@ const isHooksMatch = (
   const settingsKeys = Object.keys(settingsHooks).sort();
   if (profileKeys.length !== settingsKeys.length) return false;
   if (profileKeys.join(",") !== settingsKeys.join(",")) return false;
-  return JSON.stringify(profileHooks, Object.keys(profileHooks).sort())
-    === JSON.stringify(settingsHooks, Object.keys(settingsHooks).sort());
+  return stableStringify(profileHooks) === stableStringify(settingsHooks);
 };
 
 const isMcpMatch = (
@@ -60,10 +68,14 @@ const isMcpMatch = (
   enabledServers: Set<string>,
   disabledServers: Set<string>
 ): boolean => {
+  // Only compare servers that still exist — profiles may reference
+  // servers that have since been removed from ~/.claude.json
   for (const name of profile.enabledMcpServers) {
+    if (!enabledServers.has(name) && !disabledServers.has(name)) continue;
     if (!enabledServers.has(name)) return false;
   }
   for (const name of profile.disabledMcpServers) {
+    if (!enabledServers.has(name) && !disabledServers.has(name)) continue;
     if (!disabledServers.has(name)) return false;
   }
   return true;
@@ -77,11 +89,18 @@ const isFullSuiteMatch = (
   enabledMcpNames: Set<string>,
   disabledMcpNames: Set<string>
 ): boolean => {
+  // If the profile doesn't track a section (empty data), skip that comparison
+  // rather than requiring the effective state to also be empty
+  const profileTracksSkills = Object.keys(profile.enabledSkills).length > 0;
+  const profileTracksHooks = Object.keys(profile.hooks).length > 0;
+  const profileTracksMcp =
+    profile.enabledMcpServers.length > 0 || profile.disabledMcpServers.length > 0;
+
   return (
     isToggleMapMatch(profile.enabledPlugins, effectivePlugins) &&
-    isToggleMapMatch(profile.enabledSkills, effectiveSkills) &&
-    isHooksMatch(profile.hooks, effectiveHooks) &&
-    isMcpMatch(profile, enabledMcpNames, disabledMcpNames)
+    (!profileTracksSkills || isToggleMapMatch(profile.enabledSkills, effectiveSkills)) &&
+    (!profileTracksHooks || isHooksMatch(profile.hooks, effectiveHooks)) &&
+    (!profileTracksMcp || isMcpMatch(profile, enabledMcpNames, disabledMcpNames))
   );
 };
 
@@ -104,6 +123,7 @@ profiles.get("/", async (c) => {
     const files = await readdir(PATHS.profilesDir);
     const jsonFiles = files.filter((f) => f.endsWith(".json"));
 
+    // Read raw settings for active detection (must match what switch writes)
     const globalSettings = await readJsonFile<SettingsFile>(PATHS.globalSettings);
     let effectivePlugins = { ...(globalSettings?.enabledPlugins ?? {}) };
     let effectiveSkills = { ...(globalSettings?.enabledSkills ?? {}) };
@@ -122,9 +142,20 @@ profiles.get("/", async (c) => {
       }
     }
 
+    // Build effective MCP state (global, then apply project overrides)
     const claudeJson = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
     const enabledMcpNames = new Set(Object.keys(claudeJson?.mcpServers ?? {}));
     const disabledMcpNames = new Set(Object.keys(claudeJson?.disabledMcpServers ?? {}));
+
+    if (projectPath && claudeJson?.projects) {
+      const projEntry = claudeJson.projects[projectPath] as ProjectEntry | undefined;
+      if (projEntry?.disabledMcpServers) {
+        for (const name of projEntry.disabledMcpServers) {
+          enabledMcpNames.delete(name);
+          disabledMcpNames.add(name);
+        }
+      }
+    }
 
     const entries: ProfileEntry[] = [];
     let activeProfile: string | null = null;
@@ -138,8 +169,7 @@ profiles.get("/", async (c) => {
       const pluginCount = getEnabledKeys(data.enabledPlugins).size;
       const skillCount = getEnabledKeys(data.enabledSkills ?? {}).size;
       const hookEventCount = Object.keys(data.hooks ?? {}).length;
-      const mcpServerCount =
-        (data.enabledMcpServers ?? []).length + (data.disabledMcpServers ?? []).length;
+      const mcpServerCount = (data.enabledMcpServers ?? []).length;
 
       const normalizedProfile: ProfileFile = {
         _description: data._description ?? "",
@@ -211,28 +241,56 @@ profiles.post("/switch", async (c) => {
     // Step 1: Write plugins + skills + hooks to settings.json
     const settings = (await readJsonFile<SettingsFile>(settingsPath)) ?? {};
 
+    // When project-scoped, read global settings so we can override
+    // globally-enabled plugins/skills that aren't in the profile
+    const globalSettings = projectPath
+      ? await readJsonFile<SettingsFile>(PATHS.globalSettings)
+      : null;
+
     const updatedPlugins: Record<string, boolean> = {};
+    // Disable all existing keys in current settings
     for (const key of Object.keys(settings.enabledPlugins ?? {})) {
       updatedPlugins[key] = false;
+    }
+    // In project scope, also override globally-enabled plugins not in profile
+    if (globalSettings) {
+      for (const [key, val] of Object.entries(globalSettings.enabledPlugins ?? {})) {
+        if (val && !(key in profile.enabledPlugins)) {
+          updatedPlugins[key] = false;
+        }
+      }
     }
     for (const [key, val] of Object.entries(profile.enabledPlugins)) {
       updatedPlugins[key] = val;
     }
 
+    const updatedSettings: Record<string, unknown> = {
+      ...settings,
+      enabledPlugins: updatedPlugins,
+    };
+
+    // Always write skills — an empty map means "disable all"
+    const profileSkills = profile.enabledSkills ?? {};
     const updatedSkills: Record<string, boolean> = {};
     for (const key of Object.keys(settings.enabledSkills ?? {})) {
       updatedSkills[key] = false;
     }
-    for (const [key, val] of Object.entries(profile.enabledSkills ?? {})) {
+    // In project scope, also override globally-enabled skills not in profile
+    if (globalSettings) {
+      for (const [key, val] of Object.entries(globalSettings.enabledSkills ?? {})) {
+        if (val && !(key in profileSkills)) {
+          updatedSkills[key] = false;
+        }
+      }
+    }
+    for (const [key, val] of Object.entries(profileSkills)) {
       updatedSkills[key] = val;
     }
+    updatedSettings.enabledSkills = updatedSkills;
 
-    const updatedSettings = {
-      ...settings,
-      enabledPlugins: updatedPlugins,
-      enabledSkills: updatedSkills,
-      hooks: profile.hooks ?? {},
-    };
+    // Always write hooks — an empty map means "no hooks"
+    updatedSettings.hooks = profile.hooks ?? {};
+
     await writeJsonFile(settingsPath, updatedSettings);
 
     // Step 2: Toggle MCP state in ~/.claude.json
@@ -347,40 +405,60 @@ profiles.post("/save-current", async (c) => {
       return c.json({ error: "Invalid profile name" }, 400);
     }
 
-    const globalSettings = await readJsonFile<SettingsFile>(PATHS.globalSettings);
-    let effectivePlugins = { ...(globalSettings?.enabledPlugins ?? {}) };
-    let effectiveSkills = { ...(globalSettings?.enabledSkills ?? {}) };
-    let effectiveHooks: HooksMap = { ...(globalSettings?.hooks ?? {}) };
+    // Use scanners to get resolved enabled state (not raw settings)
+    const [pluginList, skillList] = await Promise.all([
+      projectPath ? scanPlugins(getSettingsPath(projectPath)) : scanPlugins(),
+      scanSkills(
+        projectPath ? getSettingsPath(projectPath) : undefined,
+        projectPath
+      ),
+    ]);
 
+    const enabledPluginsOnly: Record<string, boolean> = {};
+    for (const p of pluginList) {
+      if (p.enabled) enabledPluginsOnly[p.id] = true;
+    }
+
+    const enabledSkillsOnly: Record<string, boolean> = {};
+    for (const s of skillList) {
+      if (s.enabled) enabledSkillsOnly[s.id] = true;
+    }
+
+    // Read hooks from effective settings
+    const globalSettings = await readJsonFile<SettingsFile>(PATHS.globalSettings);
+    let effectiveHooks: HooksMap = { ...(globalSettings?.hooks ?? {}) };
     if (projectPath) {
       const projectSettings = await readJsonFile<SettingsFile>(settingsPath);
-      if (projectSettings?.enabledPlugins) {
-        effectivePlugins = { ...effectivePlugins, ...projectSettings.enabledPlugins };
-      }
-      if (projectSettings?.enabledSkills) {
-        effectiveSkills = { ...effectiveSkills, ...projectSettings.enabledSkills };
-      }
       if (projectSettings?.hooks) {
         effectiveHooks = projectSettings.hooks;
       }
     }
 
+    // Build effective MCP state (global, then apply project overrides)
     const claudeJson = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
-    const enabledMcpServers = Object.keys(claudeJson?.mcpServers ?? {});
-    const disabledMcpServers = Object.keys(claudeJson?.disabledMcpServers ?? {});
+    const enabledMcpSet = new Set(Object.keys(claudeJson?.mcpServers ?? {}));
+    const disabledMcpSet = new Set(Object.keys(claudeJson?.disabledMcpServers ?? {}));
 
-    const enabledPluginsOnly: Record<string, boolean> = {};
-    for (const [key, val] of Object.entries(effectivePlugins)) {
-      if (val) enabledPluginsOnly[key] = true;
+    if (projectPath && claudeJson?.projects) {
+      const projEntry = claudeJson.projects[projectPath] as ProjectEntry | undefined;
+      if (projEntry?.disabledMcpServers) {
+        for (const n of projEntry.disabledMcpServers) {
+          enabledMcpSet.delete(n);
+          disabledMcpSet.add(n);
+        }
+      }
     }
 
-    const enabledSkillsOnly: Record<string, boolean> = {};
-    for (const [key, val] of Object.entries(effectiveSkills)) {
-      if (val) enabledSkillsOnly[key] = true;
-    }
+    const enabledMcpServers = Array.from(enabledMcpSet);
+    const disabledMcpServers = Array.from(disabledMcpSet);
 
     await ensureDir(PATHS.profilesDir);
     const filePath = join(PATHS.profilesDir, `${name}.json`);
+
+    const existing = await readJsonFile<ProfileFile>(filePath);
+    if (existing) {
+      return c.json({ error: `Profile "${name}" already exists` }, 409);
+    }
 
     const data: ProfileFile = {
       _description: description,
@@ -449,6 +527,7 @@ profiles.delete("/:name", async (c) => {
     }
 
     const filePath = join(PATHS.profilesDir, `${name}.json`);
+    await createBackup(filePath);
     await unlink(filePath);
 
     return c.json({ ok: true });

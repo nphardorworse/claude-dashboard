@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import type { Insight } from "../../../shared/types";
 import { buildScopedUrl } from "../../lib/api";
 import { InsightCards } from "./InsightCards";
+import { Card, CardContent } from "~/client/components/ui/card";
 
 type ProjectAnalyticsProps = {
   projectPath: string;
@@ -40,12 +41,12 @@ const formatTokens = (tokens: number): string => {
 const truncatePrompt = (prompt: string, maxLen = 50): string => {
   if (!prompt) return "Untitled session";
   if (prompt.length <= maxLen) return prompt;
-  return prompt.slice(0, maxLen).trimEnd() + "...";
+  return `${prompt.slice(0, maxLen).trimEnd()  }...`;
 };
 
 const truncateSessionId = (id: string): string => {
   if (id.length <= 8) return id;
-  return id.slice(0, 8) + "...";
+  return `${id.slice(0, 8)  }...`;
 };
 
 type AnalyticsMetricCardProps = {
@@ -54,16 +55,16 @@ type AnalyticsMetricCardProps = {
 };
 
 const AnalyticsMetricCard = ({ label, value }: AnalyticsMetricCardProps) => (
-  <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-    <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+  <Card>
+    <CardContent className="p-4">
       <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
         {label}
       </p>
       <p className="mt-2 text-lg font-bold tracking-tight text-zinc-50">
         {value}
       </p>
-    </div>
-  </div>
+    </CardContent>
+  </Card>
 );
 
 type ExpensiveSessionRowProps = {
@@ -133,15 +134,15 @@ export const ProjectAnalytics = ({ projectPath, onSessionClick }: ProjectAnalyti
 
   if (isLoading) {
     return (
-      <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+      <Card>
+      <CardContent className="p-4">
         <h3 className="text-sm font-semibold text-zinc-100">Cost Analytics</h3>
         <div className="mt-3 flex items-center gap-2">
           <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--border-hairline)] border-t-indigo-500" />
           <span className="text-xs text-zinc-400">Analyzing sessions...</span>
         </div>
-      </div>
-      </div>
+      </CardContent>
+      </Card>
     );
   }
 
@@ -150,8 +151,8 @@ export const ProjectAnalytics = ({ projectPath, onSessionClick }: ProjectAnalyti
   }
 
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-    <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card>
+    <CardContent className="p-4">
       <h3 className="text-sm font-semibold text-zinc-100">Cost Analytics</h3>
       <p className="mt-1 text-xs text-zinc-500">
         Aggregated from the 20 most recent sessions with JSONL data
@@ -199,7 +200,7 @@ export const ProjectAnalytics = ({ projectPath, onSessionClick }: ProjectAnalyti
           <InsightCards insights={data.insights} />
         </div>
       )}
-    </div>
-    </div>
+    </CardContent>
+    </Card>
   );
 };

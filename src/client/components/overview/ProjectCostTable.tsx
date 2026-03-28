@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import type { ProjectInfo } from "../../../shared/types";
+import { Card, CardContent } from "~/client/components/ui/card";
+import { Button } from "~/client/components/ui/button";
 
 const formatCost = (cost: number | null): string => {
   if (cost === null || cost === 0) return "-";
@@ -15,9 +17,10 @@ const formatTokens = (tokens: number): string => {
 
 type ProjectRowProps = {
   project: ProjectInfo;
+  onSelectProject?: (path: string) => void;
 };
 
-const ProjectRow = ({ project }: ProjectRowProps) => {
+const ProjectRow = ({ project, onSelectProject }: ProjectRowProps) => {
   const totalOutput = useMemo(
     () => project.modelUsage.reduce((sum, m) => sum + m.outputTokens, 0),
     [project.modelUsage]
@@ -52,23 +55,34 @@ const ProjectRow = ({ project }: ProjectRowProps) => {
           {project.path.replace(/^\/Users\/[^/]+\//, "~/")}
         </span>
       </td>
-      <td className="px-3 py-2.5 text-right font-mono text-sm text-zinc-300">
+      <td className="px-3 py-2.5 text-right font-mono text-sm tabular-nums text-zinc-300">
         {formatCost(project.totalCostUSD)}
       </td>
-      <td className="px-3 py-2.5 text-right font-mono text-xs text-zinc-400">
+      <td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums text-zinc-400">
         {formatTokens(totalOutput)}
       </td>
-      <td className="px-3 py-2.5 text-right font-mono text-xs text-zinc-400">
+      <td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums text-zinc-400">
         {formatTokens(totalCacheRead)}
       </td>
       <td className="hidden px-3 py-2.5 text-xs text-zinc-500 xl:table-cell">
         {models || "-"}
       </td>
+      <td className="px-3 py-2.5 text-right">
+        {onSelectProject && (
+          <Button variant="ghost" size="sm" onClick={() => onSelectProject(project.path)}>
+            See project
+          </Button>
+        )}
+      </td>
     </tr>
   );
 };
 
-export const ProjectCostTable = () => {
+type ProjectCostTableProps = {
+  onSelectProject?: (path: string) => void;
+};
+
+export const ProjectCostTable = ({ onSelectProject }: ProjectCostTableProps) => {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -105,13 +119,13 @@ export const ProjectCostTable = () => {
   if (sorted.length === 0) return null;
 
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-    <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card>
+    <CardContent className="p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-100">
           Cost by Project
         </h3>
-        <span className="font-mono text-sm font-medium text-zinc-300">
+        <span className="font-mono text-sm font-medium tabular-nums text-zinc-300">
           Total: ${totalCost.toFixed(2)}
         </span>
       </div>
@@ -138,16 +152,17 @@ export const ProjectCostTable = () => {
               <th className="hidden px-3 py-2 text-xs font-medium text-zinc-500 xl:table-cell">
                 Models
               </th>
+              <th className="px-3 py-2" />
             </tr>
           </thead>
           <tbody>
             {sorted.map((project) => (
-              <ProjectRow key={project.path} project={project} />
+              <ProjectRow key={project.path} project={project} onSelectProject={onSelectProject} />
             ))}
           </tbody>
         </table>
       </div>
-    </div>
-    </div>
+    </CardContent>
+    </Card>
   );
 };

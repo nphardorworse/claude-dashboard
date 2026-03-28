@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { SkillInfo, SkillsResponse } from "../../../shared/types";
-import { buildScopedUrl, getProjectDisplayName } from "../../lib/api";
+import { apiFetch, buildScopedUrl, getProjectDisplayName } from "../../lib/api";
 import { PageShell } from "../layout/PageShell";
 import { ScopeBanner } from "../shared/ScopeBanner";
 import { CategoryFilter, type CategoryItem } from "../plugins/CategoryFilter";
 import { SkillGrid } from "./SkillGrid";
+import { Input } from "~/client/components/ui/input";
 
 const formatTokenCount = (tokens: number): string => {
   if (tokens >= 1000) {
@@ -23,8 +24,7 @@ const SummaryBar = ({
   totalEstimatedTokens: number;
 }) => {
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] px-4 py-3 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <div className="rounded-xl bg-[var(--surface-raised)] ring-1 ring-[var(--border-hairline)] px-5 py-3.5">
         <p className="text-sm text-zinc-300">
           <span className="font-semibold text-zinc-100">{activeCount}</span>
           {" of "}
@@ -35,7 +35,6 @@ const SummaryBar = ({
             ~{formatTokenCount(totalEstimatedTokens)} tokens/turn
           </span>
         </p>
-      </div>
     </div>
   );
 };
@@ -56,12 +55,12 @@ const StatusFilter = ({
   onChange: (value: StatusFilterOption) => void;
 }) => {
   return (
-    <div className="flex rounded-lg border border-[var(--border-accent)] bg-[var(--surface-raised)]">
+    <div className="flex h-9 rounded-lg border border-[var(--border-accent)] bg-[var(--surface-raised)]">
       {STATUS_OPTIONS.map((opt) => (
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
-          className={`px-3 py-2 text-xs font-medium transition-colors ${
+          className={`px-3 text-xs font-medium transition-colors ${
             active === opt.value
               ? "bg-[var(--overlay-medium)] text-zinc-100"
               : "text-zinc-400 hover:text-zinc-200"
@@ -108,7 +107,7 @@ const toggleSkill = async (
   projectPath: string | null
 ): Promise<void> => {
   const url = buildScopedUrl("/api/skills/toggle", projectPath);
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ skillId, enabled }),
@@ -264,12 +263,12 @@ export const SkillsPage = ({ projectPath = null, onClearProject }: SkillsPagePro
             />
 
             <div className="flex flex-wrap items-center gap-3">
-              <input
+              <Input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search skills..."
-                className="flex-1 rounded-lg border border-[var(--border-accent)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-blue-500"
+                className="flex-1"
               />
               <StatusFilter active={statusFilter} onChange={setStatusFilter} />
             </div>

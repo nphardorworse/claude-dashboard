@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { PATHS } from "../lib/paths";
 import { readJsonFile, writeJsonFile } from "../lib/file-io";
+import { validatePermissions, isPlainObject } from "../lib/validation";
 
 const config = new Hono();
 
@@ -19,6 +20,9 @@ config.get("/global-settings", async (c) => {
 config.put("/global-settings", async (c) => {
   try {
     const body = await c.req.json();
+    if (!isPlainObject(body)) {
+      return c.json({ error: "Body must be a JSON object" }, 400);
+    }
     await writeJsonFile(PATHS.globalSettings, body);
     return c.json({ ok: true });
   } catch (err) {
@@ -42,6 +46,9 @@ config.get("/global-local", async (c) => {
 config.put("/global-local", async (c) => {
   try {
     const body = await c.req.json();
+    if (!isPlainObject(body)) {
+      return c.json({ error: "Body must be a JSON object" }, 400);
+    }
     await writeJsonFile(PATHS.globalLocalSettings, body);
     return c.json({ ok: true });
   } catch (err) {
@@ -54,11 +61,12 @@ config.put("/global-local", async (c) => {
 config.put("/global-local/permissions", async (c) => {
   try {
     const body = await c.req.json<{ allow: string[] }>();
-    if (!Array.isArray(body.allow)) {
-      return c.json({ error: "allow array required" }, 400);
+    const permResult = validatePermissions(body.allow);
+    if (!permResult.valid) {
+      return c.json({ error: permResult.error }, 400);
     }
     const existing = (await readJsonFile<Record<string, unknown>>(PATHS.globalLocalSettings)) ?? {};
-    existing.permissions = { allow: body.allow };
+    existing.permissions = { allow: permResult.value };
     await writeJsonFile(PATHS.globalLocalSettings, existing);
     return c.json({ ok: true });
   } catch (err) {

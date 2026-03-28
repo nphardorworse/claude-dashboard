@@ -1,5 +1,5 @@
 import { readdir, readFile, stat, realpath } from "fs/promises";
-import { join, basename } from "path";
+import { join, basename, extname } from "path";
 import { PATHS } from "./paths";
 import { readJsonFile } from "./file-io";
 import { estimateTokens, getTokenLevel } from "./cost-estimator";
@@ -60,6 +60,36 @@ const fileSize = async (filePath: string): Promise<number> => {
   } catch {
     return 0;
   }
+};
+
+const TEXT_EXTENSIONS = new Set([
+  ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".txt",
+  ".yaml", ".yml", ".toml", ".css", ".html", ".sh",
+  ".py", ".rb", ".rs", ".go", ".lua", ".sql", ".xml",
+  ".csv", ".env", ".cfg", ".ini", ".conf",
+]);
+
+/** Walk a directory and sum the byte sizes of all text files */
+const walkDirBytes = async (dirPath: string): Promise<number> => {
+  let total = 0;
+  try {
+    const entries = await readdir(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      const fullPath = join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        total += await walkDirBytes(fullPath);
+      } else if (entry.isFile()) {
+        if (TEXT_EXTENSIONS.has(extname(entry.name))) {
+          const s = await stat(fullPath);
+          total += s.size;
+        }
+      }
+    }
+  } catch {
+    // Directory may not exist
+  }
+  return total;
 };
 
 const resolveEnabled = (
@@ -229,7 +259,9 @@ export const scanSkills = async (
       const content = await readFile(discovered.skillMdPath, "utf-8");
       const frontmatter = parseFrontmatter(content);
 
-      const contentSizeBytes = Buffer.byteLength(content, "utf-8");
+      // Walk the entire skill directory for accurate cost, not just SKILL.md
+      const skillDir = join(discovered.skillMdPath, "..");
+      const contentSizeBytes = await walkDirBytes(skillDir);
       const estimatedTokensVal = estimateTokens(contentSizeBytes);
       const tokenLevel = getTokenLevel(estimatedTokensVal);
 

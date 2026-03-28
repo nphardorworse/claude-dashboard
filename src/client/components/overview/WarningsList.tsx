@@ -1,3 +1,4 @@
+import { Card, CardContent } from "~/client/components/ui/card";
 import type { HealthWarning } from "../../../shared/types";
 
 type WarningsListProps = {
@@ -52,8 +53,8 @@ export const WarningsList = ({ warnings }: WarningsListProps) => {
   }
 
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-5 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card>
+      <CardContent>
         <h2 className="mb-3 text-sm font-semibold text-zinc-100">
           Notices & Warnings
         </h2>
@@ -62,7 +63,7 @@ export const WarningsList = ({ warnings }: WarningsListProps) => {
             <WarningItem key={`${warning.category}-${index}`} warning={warning} />
           ))}
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };

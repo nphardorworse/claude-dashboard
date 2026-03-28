@@ -1,4 +1,6 @@
 import { useCallback } from "react";
+import { XIcon } from "../shared/NavIcons";
+import { Card, CardContent } from "~/client/components/ui/card";
 
 type HookCommand = {
   type: string;
@@ -59,7 +61,7 @@ const HookCommandRow = ({
         className="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:bg-[var(--overlay-medium)] hover:text-red-400"
         title="Remove this hook"
       >
-        <span className="text-xs">&times;</span>
+        <XIcon size={12} />
       </button>
     </div>
   );
@@ -93,8 +95,8 @@ export const HookEventCard = ({
   const hasHooks = allHooks.length > 0;
 
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card>
+      <CardContent className="p-4">
         <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-100">{event}</h3>
         {hasHooks && (
@@ -111,7 +113,7 @@ export const HookEventCard = ({
         {hasHooks ? (
           allHooks.map((item) => (
             <HookCommandRow
-              key={`${item.entryIndex}-${item.hookIndex}`}
+              key={`${item.entryIndex}-${item.hookIndex}-${item.matcher}`}
               matcher={item.matcher}
               hook={item.hook}
               entryIndex={item.entryIndex}
@@ -123,7 +125,7 @@ export const HookEventCard = ({
           <EmptyState />
         )}
       </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };

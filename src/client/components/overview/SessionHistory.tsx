@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import type { SessionMeta, SessionsResponse } from "../../../shared/types";
 import { buildScopedUrl } from "../../lib/api";
 import { SessionDeepDive } from "./SessionDeepDive";
+import { Card, CardContent } from "~/client/components/ui/card";
+import { Input } from "~/client/components/ui/input";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -58,7 +60,7 @@ const formatRelativeDate = (isoString: string): string => {
 const truncatePrompt = (prompt: string, maxLen = 60): string => {
   if (!prompt) return "-";
   if (prompt.length <= maxLen) return prompt;
-  return prompt.slice(0, maxLen).trimEnd() + "...";
+  return `${prompt.slice(0, maxLen).trimEnd()  }...`;
 };
 
 const formatDuration = (minutes: number): string => {
@@ -86,7 +88,7 @@ const getWeekKey = (isoString: string): string => {
 };
 
 const formatDateGroupLabel = (dateKey: string): string => {
-  const date = new Date(dateKey + "T12:00:00");
+  const date = new Date(`${dateKey  }T12:00:00`);
   const now = new Date();
   const todayKey = getDateKey(now.toISOString());
   const yesterday = new Date(now);
@@ -104,7 +106,7 @@ const formatDateGroupLabel = (dateKey: string): string => {
 };
 
 const formatWeekGroupLabel = (weekKey: string): string => {
-  const start = new Date(weekKey + "T12:00:00");
+  const start = new Date(`${weekKey  }T12:00:00`);
   const end = new Date(start);
   end.setDate(end.getDate() + 6);
 
@@ -263,7 +265,7 @@ const SegmentedControl = <T extends string>({
           key={opt.value}
           type="button"
           onClick={() => onChange(opt.value)}
-          className={`px-2.5 py-1.5 text-[11px] font-medium transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          className={`px-2.5 py-1.5 text-[11px] font-medium transition-[color,background-color,box-shadow] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-[0.96] ${
             isActive
               ? "bg-[var(--overlay-medium)] text-zinc-100 shadow-[inset_0_1px_1px_var(--glow-inset)]"
               : "text-zinc-500 hover:text-zinc-300"
@@ -294,12 +296,12 @@ const FilterBar = ({
   onGroupByChange,
 }: FilterBarProps) => (
   <div className="flex flex-wrap items-center gap-3">
-    <input
+    <Input
       type="text"
       value={searchQuery}
       onChange={(e) => onSearchChange(e.target.value)}
       placeholder="Search prompts..."
-      className="w-48 rounded-lg border-0 bg-[var(--overlay-subtle)] px-3 py-1.5 text-xs text-zinc-200 outline-none ring-1 ring-[var(--border-hairline)] placeholder:text-zinc-500 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] focus:ring-blue-500/40 focus:bg-[var(--overlay-medium)]"
+      className="w-48"
     />
     <SegmentedControl options={DATE_RANGE_OPTIONS} active={dateRange} onChange={onDateRangeChange} />
     <div className="ml-auto flex items-center gap-2">
@@ -333,9 +335,9 @@ const ActivityChart = ({ groups, groupBy }: ActivityChartProps) => {
   const formatBarLabel = useCallback(
     (key: string): string => {
       if (groupBy === "day") {
-        return String(new Date(key + "T12:00:00").getDate());
+        return String(new Date(`${key  }T12:00:00`).getDate());
       }
-      const d = new Date(key + "T12:00:00");
+      const d = new Date(`${key  }T12:00:00`);
       return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
     },
     [groupBy]
@@ -344,8 +346,8 @@ const ActivityChart = ({ groups, groupBy }: ActivityChartProps) => {
   if (displayGroups.length < 2) return null;
 
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] px-5 py-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card>
+      <CardContent className="px-5 py-4">
         <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
           Activity Overview
         </p>
@@ -364,7 +366,7 @@ const ActivityChart = ({ groups, groupBy }: ActivityChartProps) => {
                 >
                   {/* Stacked bar: input (bottom, blue) + output (top, indigo) */}
                   <div
-                    className="relative w-full overflow-hidden rounded-t-sm transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:brightness-125"
+                    className="relative w-full overflow-hidden rounded-t-sm transition-[height,filter] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:brightness-125"
                     style={{ height: `${Math.max(pct, 4)}%`, minHeight: 2 }}
                   >
                     <div
@@ -382,7 +384,7 @@ const ActivityChart = ({ groups, groupBy }: ActivityChartProps) => {
                 </span>
 
                 {/* Hover tooltip */}
-                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-lg bg-[var(--overlay-medium)] px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover:opacity-100">
+                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-lg bg-zinc-900 px-3 py-2 opacity-0 shadow-xl ring-1 ring-[var(--border-hairline)] transition-opacity duration-200 group-hover:opacity-100">
                   <p className="whitespace-nowrap text-[10px] font-semibold text-zinc-200">
                     {g.label}
                   </p>
@@ -406,8 +408,8 @@ const ActivityChart = ({ groups, groupBy }: ActivityChartProps) => {
             Output
           </span>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };
 
@@ -476,7 +478,7 @@ const GroupHeader = ({ group, maxGroupTokens }: GroupHeaderProps) => {
           </span>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--overlay-faint)]">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-blue-500/40 to-indigo-400/30 transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
+              className="h-full rounded-full bg-gradient-to-r from-blue-500/40 to-indigo-400/30 transition-[width] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
               style={{ width: `${barWidth}%` }}
             />
           </div>
@@ -510,7 +512,7 @@ const SessionRow = ({
   return (
     <>
       <tr
-        className={`cursor-pointer border-b border-[var(--border-hairline)] transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:bg-[var(--overlay-faint)] ${
+        className={`cursor-pointer border-b border-[var(--border-hairline)] transition-[background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:bg-[var(--overlay-faint)] ${
           isExpanded ? "bg-[var(--overlay-subtle)]" : ""
         }`}
         onClick={onToggle}
@@ -519,7 +521,7 @@ const SessionRow = ({
         <td className="whitespace-nowrap px-3 py-2.5 text-xs text-zinc-400">
           {formatRelativeDate(session.startTime)}
         </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs text-zinc-400">
+        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs tabular-nums text-zinc-400">
           {formatDuration(session.durationMinutes)}
         </td>
         <td
@@ -533,10 +535,10 @@ const SessionRow = ({
           )}
           {truncatePrompt(session.firstPrompt)}
         </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs text-zinc-400">
+        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs tabular-nums text-zinc-400">
           {totalMessages}
         </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs text-zinc-400">
+        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs tabular-nums text-zinc-400">
           <span className="text-zinc-500">in:</span>
           {formatTokens(session.inputTokens)}{" "}
           <span className="text-zinc-500">out:</span>
@@ -545,7 +547,7 @@ const SessionRow = ({
         <td className="px-3 py-2.5">
           <ToolBadgeList toolCounts={session.toolCounts} />
         </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs">
+        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs tabular-nums">
           {session.linesAdded > 0 && (
             <span className="text-green-400">+{session.linesAdded}</span>
           )}
@@ -559,7 +561,7 @@ const SessionRow = ({
             <span className="text-zinc-500">-</span>
           )}
         </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs">
+        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs tabular-nums">
           {session.toolErrors > 0 ? (
             <span className="text-red-400">{session.toolErrors}</span>
           ) : (
@@ -596,7 +598,7 @@ const SummaryBar = ({
   const isFiltered = filteredSessions < totalSessions;
 
   return (
-    <div className="flex items-center gap-4 text-xs text-zinc-400">
+    <div className="flex items-center gap-4 text-xs tabular-nums text-zinc-400">
       <span>
         <span className="font-medium text-zinc-200">{filteredSessions}</span>
         {isFiltered && (
@@ -809,22 +811,22 @@ export const SessionHistory = ({
 
   if (sessions.length === 0) {
     return (
-      <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+      <Card>
+      <CardContent className="p-4">
         <h3 className="text-sm font-semibold text-zinc-100">
           Session History
         </h3>
         <p className="mt-2 text-xs text-zinc-500">
           No sessions found for this project.
         </p>
-      </div>
-      </div>
+      </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-    <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card>
+    <CardContent className="p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-100">
           Session History
@@ -896,8 +898,8 @@ export const SessionHistory = ({
           </table>
         </div>
       )}
-    </div>
-    </div>
+    </CardContent>
+    </Card>
   );
 };
 

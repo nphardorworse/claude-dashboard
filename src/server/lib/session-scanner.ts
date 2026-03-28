@@ -22,6 +22,7 @@ export type SessionMeta = {
   usesWebSearch: boolean;
   usesTaskAgent: boolean;
   toolErrors: number;
+  lastModelUsed: string;
 };
 
 type RawSessionMeta = {
@@ -75,6 +76,7 @@ const parseSession = (raw: RawSessionMeta): SessionMeta | null => {
     usesWebSearch: raw.uses_web_search ?? false,
     usesTaskAgent: raw.uses_task_agent ?? false,
     toolErrors: raw.tool_errors ?? 0,
+    lastModelUsed: (raw as Record<string, unknown>).last_model_used as string ?? "",
   };
 };
 
@@ -179,6 +181,7 @@ const parseJsonlForMeta = async (
   let outputTokens = 0;
   const toolCounts: Record<string, number> = {};
   let toolErrors = 0;
+  let lastModelUsed = "";
   let usesMcp = false;
   let usesWebSearch = false;
   let usesTaskAgent = false;
@@ -229,6 +232,9 @@ const parseJsonlForMeta = async (
 
     if (entryType === "assistant") {
       assistantMessages++;
+      if (entry.message?.model) {
+        lastModelUsed = entry.message.model;
+      }
       const usage = entry.message?.usage;
       if (usage) {
         inputTokens += (usage.input_tokens ?? 0) +
@@ -297,6 +303,7 @@ const parseJsonlForMeta = async (
     usesWebSearch,
     usesTaskAgent,
     toolErrors,
+    lastModelUsed,
   };
 };
 

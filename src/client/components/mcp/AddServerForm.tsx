@@ -1,4 +1,6 @@
 import { useState, useCallback } from "react";
+import { Button } from "~/client/components/ui/button";
+import { Input } from "~/client/components/ui/input";
 
 type AddServerFormProps = {
   onSubmit: (server: {
@@ -34,12 +36,12 @@ const FormField = ({
       <label className="mb-1 block text-xs font-medium text-zinc-400">
         {label}
       </label>
-      <input
+      <Input
         type="text"
         value={value}
         onChange={handleChange}
         placeholder={placeholder}
-        className={`w-full rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-blue-500 ${isMonospace ? "font-mono" : ""}`}
+        className={isMonospace ? "font-mono" : ""}
       />
     </div>
   );
@@ -70,7 +72,7 @@ export const AddServerForm = ({ onSubmit, onCancel }: AddServerFormProps) => {
       }
 
       const args = argsString
-        .split(",")
+        .split(/\s+/)
         .map((a) => a.trim())
         .filter((a) => a.length > 0);
 
@@ -110,10 +112,10 @@ export const AddServerForm = ({ onSubmit, onCancel }: AddServerFormProps) => {
           isMonospace
         />
         <FormField
-          label="Args (comma-separated)"
+          label="Args (space-separated)"
           value={argsString}
           onChange={setArgsString}
-          placeholder="--port, 3000"
+          placeholder="--port 3000"
           isMonospace
         />
       </div>
@@ -123,20 +125,12 @@ export const AddServerForm = ({ onSubmit, onCancel }: AddServerFormProps) => {
       )}
 
       <div className="mt-4 flex items-center gap-2">
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
-        >
+        <Button type="submit" size="sm" disabled={isSubmitting}>
           {isSubmitting ? "Adding..." : "Add Server"}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-md px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:text-zinc-200"
-        >
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );

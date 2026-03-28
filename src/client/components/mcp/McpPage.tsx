@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { buildScopedUrl, getProjectDisplayName } from "../../lib/api";
+import { apiFetch, buildScopedUrl, getProjectDisplayName } from "../../lib/api";
 import { PageShell } from "../layout/PageShell";
 import { ScopeBanner } from "../shared/ScopeBanner";
-import { useToast } from "../shared/Toast";
+import { useToast } from "../shared/use-toast";
 import { McpCatalogCard } from "./McpCatalogCard";
 import { McpOriginGroup } from "./McpOriginGroup";
 import { McpCatalogSection } from "./McpCatalogSection";
 import { AddServerForm } from "./AddServerForm";
+import { Button } from "~/client/components/ui/button";
 import type {
   McpOrigin,
   McpCatalogEntry,
@@ -22,7 +23,7 @@ const fetchCatalog = async (
   projectPath: string | null
 ): Promise<CatalogResponse> => {
   const url = buildScopedUrl("/api/mcp/catalog", projectPath);
-  const response = await fetch(url);
+  const response = await apiFetch(url);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 };
@@ -32,7 +33,7 @@ const addServer = async (
   projectPath: string | null
 ): Promise<void> => {
   const url = buildScopedUrl("/api/mcp/servers", projectPath);
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(server),
@@ -51,7 +52,7 @@ const deleteServer = async (
     `/api/mcp/servers/${encodeURIComponent(name)}`,
     projectPath
   );
-  const response = await fetch(url, { method: "DELETE" });
+  const response = await apiFetch(url, { method: "DELETE" });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(data.error ?? `HTTP ${response.status}`);
@@ -62,7 +63,7 @@ const refreshHealth = async (
   projectPath: string | null
 ): Promise<void> => {
   const url = buildScopedUrl("/api/mcp/health-check", projectPath);
-  const response = await fetch(url, { method: "POST" });
+  const response = await apiFetch(url, { method: "POST" });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 };
 
@@ -70,7 +71,7 @@ const toggleGlobalMcp = async (
   mcpName: string,
   action: "enable" | "disable"
 ): Promise<void> => {
-  const response = await fetch("/api/mcp/global-toggle", {
+  const response = await apiFetch("/api/mcp/global-toggle", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mcpName, action }),
@@ -87,7 +88,7 @@ const toggleProjectMcp = async (
   origin: McpOrigin,
   action: "enable" | "disable"
 ): Promise<void> => {
-  const response = await fetch("/api/mcp/project-toggle", {
+  const response = await apiFetch("/api/mcp/project-toggle", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ projectPath, mcpName, origin, action }),
@@ -102,7 +103,7 @@ const copyToProject = async (
   mcpName: string,
   targetProjectPath: string
 ): Promise<void> => {
-  const response = await fetch("/api/mcp/copy-to-project", {
+  const response = await apiFetch("/api/mcp/copy-to-project", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mcpName, targetProjectPath }),
@@ -114,7 +115,7 @@ const copyToProject = async (
 };
 
 const updatePinned = async (servers: string[]): Promise<void> => {
-  const response = await fetch("/api/mcp/pinned", {
+  const response = await apiFetch("/api/mcp/pinned", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ servers }),
@@ -197,22 +198,13 @@ const ActionBar = ({
 }: ActionBarProps) => {
   return (
     <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={onRefresh}
-        disabled={isRefreshing}
-        className="rounded-md border border-[var(--border-accent)] bg-[var(--overlay-medium)] px-3 py-1.5 text-xs font-medium text-zinc-300 transition-snappy hover:bg-[var(--overlay-medium)] active:scale-[0.96] disabled:opacity-50"
-      >
+      <Button variant="secondary" size="sm" onClick={onRefresh} disabled={isRefreshing}>
         {isRefreshing ? "Checking..." : "Refresh Status"}
-      </button>
+      </Button>
       {onToggleForm !== undefined && (
-        <button
-          type="button"
-          onClick={onToggleForm}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-snappy hover:bg-blue-500 active:scale-[0.96]"
-        >
+        <Button size="sm" onClick={onToggleForm}>
           {isFormOpen ? "Cancel" : "Add Server"}
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -336,18 +328,23 @@ const ActiveSection = ({ groups, onToggle, onPin }: ActiveSectionProps) => {
   const entries = collectAllEntries(groups);
   if (entries.length === 0) return null;
 
-  const items: CardItem[] = entries.map((entry) => ({
-    key: `active-${entry.origin}-${entry.name}`,
-    entry,
-    action: entry.isPinned
-      ? undefined
-      : {
-          label: "Disable",
-          onClick: () => onToggle(entry.name, entry.origin, "disable"),
-        },
-    onPin,
-    onDelete: undefined,
-  }));
+  const items: CardItem[] = entries.map((entry) => {
+    let action: CardItem["action"];
+    if (!entry.isPinned) {
+      const isPersonal = entry.origin === "personal";
+      action = {
+        label: isPersonal ? "Remove" : "Disable",
+        onClick: () => onToggle(entry.name, entry.origin, "disable"),
+      };
+    }
+    return {
+      key: `active-${entry.origin}-${entry.name}`,
+      entry,
+      action,
+      onPin,
+      onDelete: undefined,
+    };
+  });
 
   return (
     <McpCatalogSection title="Active in this project" count={entries.length}>
@@ -369,7 +366,7 @@ const DisabledSection = ({ groups, onToggle }: DisabledSectionProps) => {
     key: `disabled-${entry.origin}-${entry.name}`,
     entry,
     action: {
-      label: "Enable",
+      label: entry.origin === "global-disabled" ? "Re-enable globally" : "Enable",
       onClick: () => onToggle(entry.name, entry.origin, "enable"),
     },
     onPin: undefined,
@@ -463,7 +460,9 @@ export const McpPage = ({ projectPath = null, onClearProject }: McpPageProps) =>
 
   useEffect(() => {
     setIsLoading(true);
-    loadCatalog().finally(() => setIsLoading(false));
+    loadCatalog()
+      .then(() => setIsLoading(false))
+      .catch(() => setIsLoading(false));
   }, [loadCatalog]);
 
   // ------ action handlers ------
@@ -471,10 +470,26 @@ export const McpPage = ({ projectPath = null, onClearProject }: McpPageProps) =>
   const handleToggle = useCallback(
     async (mcpName: string, origin: McpOrigin, action: "enable" | "disable") => {
       if (!projectPath) return;
+
+      // Personal disable is a permanent removal — confirm first
+      if (origin === "personal" && action === "disable") {
+        const confirmed = window.confirm(
+          `Remove "${mcpName}"? This permanently deletes the server config from this project.`
+        );
+        if (!confirmed) return;
+      }
+
       try {
         await toggleProjectMcp(projectPath, mcpName, origin, action);
         await loadCatalog();
-        toast(`${mcpName} ${action}d`, "success");
+
+        if (origin === "personal" && action === "disable") {
+          toast(`${mcpName} removed`, "success");
+        } else if (origin === "global-disabled" && action === "enable") {
+          toast(`${mcpName} re-enabled globally`, "success");
+        } else {
+          toast(`${mcpName} ${action}d`, "success");
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Toggle failed";
         toast(msg, "error");

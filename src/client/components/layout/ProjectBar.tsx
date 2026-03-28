@@ -28,7 +28,7 @@ export const ProjectBar = ({ name, path, estimatedCostUSD, percentage, isSelecte
       </div>
       <div className="h-[3px] w-full overflow-hidden rounded-full bg-[var(--overlay-subtle)]">
         <div
-          className={`h-full rounded-full transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${barColor}`}
+          className={`h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${barColor}`}
           style={{ width: `${Math.min(Math.max(percentage, 2), 100)}%` }}
         />
       </div>

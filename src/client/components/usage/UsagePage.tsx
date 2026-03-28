@@ -1,25 +1,53 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { apiFetch } from "../../lib/api";
 import { PageShell } from "../layout/PageShell";
 import { useWindowedUsage } from "../../hooks/use-windowed-usage";
 import { usePlanLimits } from "../../hooks/use-plan-limits";
 import { LimitProgressCard } from "./LimitProgressCard";
 import { LimitConfigCard } from "./LimitConfigCard";
 import { ProjectBreakdownTable } from "./ProjectBreakdownTable";
-import type { PlanLimits } from "../../../shared/types";
+import type { PlanLimits, ContextWindowResponse } from "../../../shared/types";
 
 type UsagePageProps = {
   projectPath: string | null;
   onClearProject: () => void;
 };
 
-export const UsagePage = ({ projectPath: _projectPath, onClearProject: _onClearProject }: UsagePageProps) => {
+export const UsagePage = ({
+  projectPath: _projectPath,
+  onClearProject: _onClearProject,
+}: UsagePageProps) => {
   const { data, isLoading: usageLoading, refetch } = useWindowedUsage();
   const { limits, saveLimits, isLoading: limitsLoading } = usePlanLimits();
+  const [contextWindow, setContextWindow] =
+    useState<ContextWindowResponse | null>(null);
 
-  const handleSaveLimits = useCallback(async (next: PlanLimits) => {
-    await saveLimits(next);
-    refetch();
-  }, [saveLimits, refetch]);
+  useEffect(() => {
+    fetch("http://localhost:3847/api/defaults/context-window")
+      .then((r) => r.json())
+      .then(setContextWindow)
+      .catch(() => {});
+  }, []);
+
+  const handleSaveLimits = useCallback(
+    async (next: PlanLimits) => {
+      await saveLimits(next);
+      refetch();
+    },
+    [saveLimits, refetch],
+  );
+
+  const handleSaveContextWindow = useCallback(async (size: number | null) => {
+    await apiFetch("http://localhost:3847/api/defaults/context-window", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contextWindowSize: size }),
+    });
+    const res = await fetch(
+      "http://localhost:3847/api/defaults/context-window",
+    );
+    setContextWindow(await res.json());
+  }, []);
 
   if (usageLoading || !data) {
     return (
@@ -31,17 +59,6 @@ export const UsagePage = ({ projectPath: _projectPath, onClearProject: _onClearP
 
   return (
     <PageShell title="Plan Usage">
-      {/* Explanation */}
-      <div className="rounded-xl bg-[var(--overlay-faint)] px-4 py-3 ring-1 ring-[var(--border-hairline)]">
-        <p className="text-[11px] leading-relaxed text-zinc-500">
-          <strong className="text-zinc-400">Why messages, not tokens?</strong>{" "}
-          Anthropic rate-limits on messages (user turns), not raw token counts.
-          Each prompt you send counts as one message — regardless of how many
-          tool calls Claude makes in response. Token totals are shown for context
-          but don&apos;t directly determine when you hit the cap.
-        </p>
-      </div>
-
       {/* Progress cards — session + weekly */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <LimitProgressCard
@@ -72,6 +89,8 @@ export const UsagePage = ({ projectPath: _projectPath, onClearProject: _onClearP
           limits={limits}
           isLoading={limitsLoading}
           onSave={handleSaveLimits}
+          contextWindow={contextWindow}
+          onSaveContextWindow={handleSaveContextWindow}
         />
       </div>
 
@@ -85,9 +104,12 @@ export const UsagePage = ({ projectPath: _projectPath, onClearProject: _onClearP
 
       {/* Pricing disclaimer */}
       <p className="mt-4 text-[10px] text-zinc-500">
-        Message limits are community estimates — Anthropic does not publish exact numbers.
-        Cost estimates use Sonnet pricing. Set reset times from{" "}
-        <code className="rounded bg-[var(--overlay-subtle)] px-1 text-zinc-500">/usage</code> for accurate window boundaries.
+        Message limits are community estimates — Anthropic does not publish
+        exact numbers. Cost estimates use Sonnet pricing. Set reset times from{" "}
+        <code className="rounded bg-[var(--overlay-subtle)] px-1 text-zinc-500">
+          /usage
+        </code>{" "}
+        for accurate window boundaries.
       </p>
     </PageShell>
   );

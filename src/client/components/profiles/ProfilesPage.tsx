@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { buildScopedUrl, getProjectDisplayName } from "../../lib/api";
+import { apiFetch, buildScopedUrl, getProjectDisplayName } from "../../lib/api";
 import { useToast } from "../shared/use-toast";
+import { Button } from "~/client/components/ui/button";
 import { PageShell } from "../layout/PageShell";
 import { ScopeBanner } from "../shared/ScopeBanner";
 import { ProfileCard } from "./ProfileCard";
@@ -65,7 +66,7 @@ const ProfileGrid = ({
   onEdit: (profile: ProfileEntry) => void;
   onDelete: (name: string) => Promise<void>;
 }) => (
-  <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
+  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
     {profiles.map((profile) => (
       <ProfileCard
         key={profile.name}
@@ -154,7 +155,7 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
       setSwitchingName(name);
       try {
         const url = buildScopedUrl("/api/profiles/switch", projectPath);
-        const res = await fetch(url, {
+        const res = await apiFetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ profileName: name }),
@@ -174,7 +175,7 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
   const handleDelete = useCallback(
     async (name: string) => {
       try {
-        const res = await fetch(`/api/profiles/${encodeURIComponent(name)}`, {
+        const res = await apiFetch(`/api/profiles/${encodeURIComponent(name)}`, {
           method: "DELETE",
         });
         if (!res.ok) {
@@ -206,7 +207,7 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
       }
 
       const url = buildScopedUrl("/api/profiles", projectPath);
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -235,7 +236,7 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
       enabledMcpServers: string[],
       disabledMcpServers: string[]
     ) => {
-      const res = await fetch(`/api/profiles/${encodeURIComponent(name)}`, {
+      const res = await apiFetch(`/api/profiles/${encodeURIComponent(name)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -260,13 +261,15 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
 
   const handleSaveCurrent = useCallback(async () => {
     try {
-      const [pluginsRes, hooksRes, mcpRes] = await Promise.all([
+      const [pluginsRes, skillsRes, hooksRes, mcpRes] = await Promise.all([
         fetch(buildScopedUrl("/api/plugins", projectPath)),
+        fetch(buildScopedUrl("/api/skills", projectPath)),
         fetch(buildScopedUrl("/api/hooks", projectPath)),
         fetch(buildScopedUrl("/api/mcp/catalog", projectPath)),
       ]);
 
       const pluginsData = pluginsRes.ok ? await pluginsRes.json() : { plugins: [] };
+      const skillsData = skillsRes.ok ? await skillsRes.json() : { skills: [] };
       const hooksData = hooksRes.ok ? await hooksRes.json() : { hooks: {} };
       const mcpData = mcpRes.ok ? await mcpRes.json() : { groups: [] };
 
@@ -275,8 +278,6 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
         if (p.enabled) plugins[p.id] = true;
       }
 
-      const skillsRes = await fetch(buildScopedUrl("/api/skills", projectPath));
-      const skillsData = skillsRes.ok ? await skillsRes.json() : { skills: [] };
       const skills: Record<string, boolean> = {};
       for (const s of skillsData.skills ?? []) {
         if (s.enabled) skills[s.id] = true;
@@ -288,7 +289,8 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
         for (const entry of group.entries ?? []) {
           if (group.origin === "global-disabled") {
             disabledMcpServers.push(entry.name);
-          } else if (group.origin === "global") {
+          } else {
+            // All other origins (global, plugin, project, personal) are active
             enabledMcpServers.push(entry.name);
           }
         }
@@ -374,28 +376,27 @@ export const ProfilesPage = ({ projectPath = null, onClearProject }: ProfilesPag
       <div className="flex flex-col gap-6">
         <ScopeBanner projectPath={projectPath} configType="plugins" onClear={onClearProject} />
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <ActiveSummary
             activeProfile={activeProfile}
             activeEntry={activeEntry}
           />
 
           <div className="flex gap-2">
-            <button
+            <Button
               onClick={handleOpenCreate}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-snappy hover:bg-blue-500"
             >
               <PlusIcon />
               New Profile
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleSaveCurrent}
-              className="flex items-center gap-2 rounded-lg bg-[var(--overlay-subtle)] px-4 py-2 text-sm font-medium text-zinc-300 ring-1 ring-[var(--border-hairline)] transition-snappy hover:bg-[var(--overlay-medium)]"
+              variant="secondary"
               title="Snapshot current settings into a new profile"
             >
               <SnapshotIcon />
               Save Current
-            </button>
+            </Button>
           </div>
         </div>
 

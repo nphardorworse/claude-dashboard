@@ -15,9 +15,10 @@ import { useTheme } from "./hooks/use-theme";
 type PageRouterProps = {
   projectPath: string | null;
   onClearProject: () => void;
+  onSelectProject: (path: string) => void;
 };
 
-const PageRouter = ({ projectPath, onClearProject }: PageRouterProps) => {
+const PageRouter = ({ projectPath, onClearProject, onSelectProject }: PageRouterProps) => {
   const route = useRoute();
 
   if (route === "/plugins") return <PluginsPage projectPath={projectPath} onClearProject={onClearProject} />;
@@ -27,7 +28,7 @@ const PageRouter = ({ projectPath, onClearProject }: PageRouterProps) => {
   if (route === "/profiles") return <ProfilesPage projectPath={projectPath} onClearProject={onClearProject} />;
   if (route === "/usage") return <UsagePage projectPath={projectPath} onClearProject={onClearProject} />;
   if (route === "/how-it-works") return <HowItWorksPage />;
-  return <OverviewPage projectPath={projectPath} onClearProject={onClearProject} />;
+  return <OverviewPage projectPath={projectPath} onClearProject={onClearProject} onSelectProject={onSelectProject} />;
 };
 
 export const App = () => {
@@ -54,7 +55,7 @@ export const App = () => {
         onToggleTheme={toggleTheme}
       />
       <main className="flex-1 overflow-y-auto">
-        <PageRouter projectPath={projectPath} onClearProject={handleClearProject} />
+        <PageRouter projectPath={projectPath} onClearProject={handleClearProject} onSelectProject={handleSelectProject} />
       </main>
     </div>
   );

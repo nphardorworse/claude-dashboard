@@ -26,7 +26,7 @@ export const ensureDir = async (dirPath: string): Promise<void> => {
   await mkdir(dirPath, { recursive: true });
 };
 
-const createBackup = async (filePath: string): Promise<void> => {
+export const createBackup = async (filePath: string): Promise<void> => {
   try {
     await readFile(filePath);
   } catch {
@@ -48,6 +48,6 @@ export const writeJsonFile = async (
   await createBackup(path);
 
   const tmpPath = `${path}.tmp`;
-  await writeFile(tmpPath, JSON.stringify(data, null, 2) + "\n", "utf-8");
+  await writeFile(tmpPath, `${JSON.stringify(data, null, 2)  }\n`, "utf-8");
   await rename(tmpPath, path);
 };

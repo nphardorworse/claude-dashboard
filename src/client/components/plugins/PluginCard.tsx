@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import type { PluginInfo, PluginEnableSource } from "../../../shared/types";
 import { Toggle } from "../shared/Toggle";
 import { Badge } from "../shared/Badge";
+import { Card, CardContent } from "~/client/components/ui/card";
 import type { TokenLevel } from "../../../shared/types";
 
 const SOURCE_LABELS: Record<PluginEnableSource, string> = {
@@ -52,14 +53,13 @@ export const PluginCard = ({ plugin, onToggle, isToggling }: PluginCardProps) =>
   );
 
   return (
-    /* Double-bezel outer shell */
-    <div
-      className={`group rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)] transition-snappy hover:ring-[var(--border-accent)] ${
+    <Card
+      className={`group hover:ring-[var(--border-accent)] ${
         plugin.enabled ? "" : "opacity-50"
       }`}
     >
-      {/* Inner core */}
-      <div className="flex items-center justify-between gap-4 rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2.5">
             <h3 className="truncate text-[13px] font-semibold text-zinc-100">
@@ -69,14 +69,14 @@ export const PluginCard = ({ plugin, onToggle, isToggling }: PluginCardProps) =>
           </div>
 
           {plugin.description && (
-            <p className="mt-1.5 truncate text-[11px] text-zinc-400">
+            <p className="mt-1.5 line-clamp-2 text-[11px] text-zinc-400">
               {plugin.description}
             </p>
           )}
 
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
             <Badge
-              label={`${TOKEN_LABELS[plugin.tokenLevel]} (${formatTokens(plugin.estimatedTokens)})`}
+              label={`${TOKEN_LABELS[plugin.tokenLevel]} (${formatTokens(plugin.activeEstimatedTokens)})`}
               variant={plugin.tokenLevel}
             />
             <PluginTypeBadges
@@ -103,7 +103,8 @@ export const PluginCard = ({ plugin, onToggle, isToggling }: PluginCardProps) =>
             disabled={isToggling}
           />
         </div>
-      </div>
-    </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 };

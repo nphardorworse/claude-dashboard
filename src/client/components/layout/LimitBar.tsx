@@ -57,7 +57,7 @@ export const LimitBar = ({
       {/* Progress bar — always shown, fills proportionally when limit set */}
       <div className="h-[3px] w-full overflow-hidden rounded-full bg-[var(--overlay-subtle)]">
         <div
-          className={`h-full rounded-full transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${hasLimit ? barColor : "bg-zinc-600"}`}
+          className={`h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${hasLimit ? barColor : "bg-zinc-600"}`}
           style={{ width: hasLimit ? `${clampedPct}%` : `${Math.min(messages > 0 ? 100 : 0, 100)}%` }}
         />
       </div>

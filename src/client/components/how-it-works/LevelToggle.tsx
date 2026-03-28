@@ -10,9 +10,9 @@ export const LevelToggle = ({ level, onChangeLevel }: LevelToggleProps) => {
   const handleAdvanced = () => onChangeLevel("advanced");
 
   const activeClass =
-    "bg-[var(--overlay-subtle)] text-zinc-100 font-medium rounded-md px-4 py-1.5 text-[13px] transition-all";
+    "bg-[var(--overlay-subtle)] text-zinc-100 font-medium rounded-md px-4 py-1.5 text-[13px] transition-colors active:scale-[0.96]";
   const inactiveClass =
-    "text-zinc-400 hover:text-zinc-300 px-4 py-1.5 text-[13px] rounded-md transition-all";
+    "text-zinc-400 hover:text-zinc-300 px-4 py-1.5 text-[13px] rounded-md transition-colors active:scale-[0.96]";
 
   return (
     <div

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getProjectPath, getSettingsPath } from "../lib/paths";
 import { parseSessionJsonl } from "../lib/jsonl-parser";
-import { generateInsights } from "../lib/insights";
+import { generateInsights, generateProjectInsights } from "../lib/insights";
 import { scanPlugins } from "../lib/plugin-scanner";
 import { getSessionsForProject } from "../lib/session-scanner";
 import type { SessionAnalysis, Insight } from "../../shared/types";
@@ -84,7 +84,6 @@ analytics.get("/project", async (c) => {
 
     const parsed: Array<{
       analysis: SessionAnalysis;
-      insights: Insight[];
       firstPrompt: string;
     }> = [];
 
@@ -94,13 +93,7 @@ analytics.get("/project", async (c) => {
         projectPath
       );
       if (!analysis) continue;
-
-      const insights = generateInsights(analysis, pluginTokenEstimate);
-      parsed.push({
-        analysis,
-        insights,
-        firstPrompt: session.firstPrompt,
-      });
+      parsed.push({ analysis, firstPrompt: session.firstPrompt });
     }
 
     if (parsed.length === 0) {
@@ -141,17 +134,10 @@ analytics.get("/project", async (c) => {
         turns: analysis.turns.length,
       }));
 
-    const allInsights: Insight[] = [];
-    const seenInsightIds = new Set<string>();
-
-    for (const { insights } of parsed) {
-      for (const insight of insights) {
-        if (!seenInsightIds.has(insight.id)) {
-          seenInsightIds.add(insight.id);
-          allInsights.push(insight);
-        }
-      }
-    }
+    const insights = generateProjectInsights(
+      parsed.map((p) => p.analysis),
+      pluginTokenEstimate
+    );
 
     const response: ProjectAnalyticsResponse = {
       totalCostUSD,
@@ -160,7 +146,7 @@ analytics.get("/project", async (c) => {
       peakContextSize,
       modelBreakdown,
       topExpensiveSessions,
-      insights: allInsights,
+      insights,
     };
 
     return c.json(response);

@@ -8,14 +8,14 @@ const NODE_STYLE = {
   fill: "var(--surface-raised)",
   stroke: "var(--border-hairline)",
   strokeWidth: 1.5,
-  rx: 8,
+  rx: 10,
 };
 
 const CENTER_NODE_STYLE = {
   fill: "var(--overlay-subtle)",
   stroke: "var(--border-hairline)",
-  strokeWidth: 1.5,
-  rx: 8,
+  strokeWidth: 2,
+  rx: 10,
 };
 
 const TEXT_PRIMARY = "var(--text-primary)";
@@ -58,12 +58,12 @@ export const EcosystemDiagram = ({ level }: EcosystemDiagramProps) => {
   const bottomY = isBeginner ? 310 : 240;
 
   return (
-    <div className="w-full overflow-x-auto">
+    <div className="rounded-xl bg-[var(--surface-raised)] p-5 ring-1 ring-[var(--border-hairline)] overflow-x-auto">
       <svg
         viewBox={viewBox}
         role="img"
         aria-label="Ecosystem diagram showing how Claude Code components connect"
-        style={{ minWidth: 600 }}
+        style={{ minWidth: 500, maxWidth: "100%" }}
       >
         {/* Center node */}
         <rect
@@ -127,7 +127,7 @@ export const EcosystemDiagram = ({ level }: EcosystemDiagramProps) => {
           x2={95}
           y2={120}
           stroke={LINE_STROKE}
-          strokeWidth={1.5}
+          strokeWidth={2}
         />
         <line
           x1={190}
@@ -135,7 +135,7 @@ export const EcosystemDiagram = ({ level }: EcosystemDiagramProps) => {
           x2={225}
           y2={120}
           stroke={LINE_STROKE}
-          strokeWidth={1.5}
+          strokeWidth={2}
         />
 
         {/* Top-right: MCP Servers */}
@@ -185,7 +185,7 @@ export const EcosystemDiagram = ({ level }: EcosystemDiagramProps) => {
           x2={290}
           y2={centerY + 15}
           stroke={LINE_STROKE}
-          strokeWidth={1.5}
+          strokeWidth={2}
         />
         {/* MCP Servers -> Center */}
         <line
@@ -194,7 +194,7 @@ export const EcosystemDiagram = ({ level }: EcosystemDiagramProps) => {
           x2={510}
           y2={centerY + 15}
           stroke={LINE_STROKE}
-          strokeWidth={1.5}
+          strokeWidth={2}
         />
         {/* Hooks -> Center */}
         <line
@@ -203,7 +203,7 @@ export const EcosystemDiagram = ({ level }: EcosystemDiagramProps) => {
           x2={290}
           y2={centerY + 35}
           stroke={LINE_STROKE}
-          strokeWidth={1.5}
+          strokeWidth={2}
         />
         {/* Profiles -> Center */}
         <line
@@ -212,7 +212,7 @@ export const EcosystemDiagram = ({ level }: EcosystemDiagramProps) => {
           x2={510}
           y2={centerY + 35}
           stroke={LINE_STROKE}
-          strokeWidth={1.5}
+          strokeWidth={2}
         />
 
         {/* Dashed line: MCPs sub-node -> MCP Servers */}
@@ -223,7 +223,7 @@ export const EcosystemDiagram = ({ level }: EcosystemDiagramProps) => {
           y2={62}
           stroke={LINE_STROKE}
           strokeWidth={1.5}
-          strokeDasharray="6 4"
+          strokeDasharray="6 3"
         />
 
         {/* Dashed arc: Profiles -> Plugins ("controls which plugins are active") */}
@@ -232,7 +232,7 @@ export const EcosystemDiagram = ({ level }: EcosystemDiagramProps) => {
           fill="none"
           stroke={LINE_STROKE}
           strokeWidth={1.5}
-          strokeDasharray="6 4"
+          strokeDasharray="6 3"
         />
         <text
           x={400}

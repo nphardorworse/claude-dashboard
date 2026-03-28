@@ -1,3 +1,4 @@
+import { Card, CardContent } from "~/client/components/ui/card";
 import type { Insight } from "../../../shared/types";
 
 type InsightCardsProps = {
@@ -36,8 +37,8 @@ const InsightCard = ({ insight }: InsightCardProps) => {
   const config = LEVEL_CONFIG[insight.level];
 
   return (
-    <div className={`rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ${config.borderColor}`}>
-      <div className="flex gap-3 rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] p-4 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <Card className={config.borderColor}>
+      <CardContent className="flex gap-3 p-4">
         <div
           className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${config.iconBg}`}
         >
@@ -49,8 +50,8 @@ const InsightCard = ({ insight }: InsightCardProps) => {
             {insight.message}
           </p>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };
 

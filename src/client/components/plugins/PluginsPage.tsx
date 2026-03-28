@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { PluginInfo, PluginsResponse } from "../../../shared/types";
-import { buildScopedUrl, getProjectDisplayName } from "../../lib/api";
+import { apiFetch, buildScopedUrl, getProjectDisplayName } from "../../lib/api";
 import { PageShell } from "../layout/PageShell";
 import { ScopeBanner } from "../shared/ScopeBanner";
 import { CategoryFilter } from "./CategoryFilter";
 import { PluginGrid } from "./PluginGrid";
+import { Input } from "~/client/components/ui/input";
 
 const formatTokenCount = (tokens: number): string => {
   if (tokens >= 1000) {
@@ -23,19 +24,17 @@ const SummaryBar = ({
   totalEstimatedTokens: number;
 }) => {
   return (
-    <div className="rounded-2xl bg-[var(--overlay-faint)] p-[1px] ring-1 ring-[var(--border-hairline)]">
-      <div className="rounded-[calc(1rem-1px)] bg-[var(--surface-raised)] px-4 py-3 shadow-[inset_0_1px_1px_var(--glow-inset)]">
+    <div className="rounded-xl bg-[var(--surface-raised)] ring-1 ring-[var(--border-hairline)] px-5 py-3.5">
         <p className="text-sm text-zinc-300">
-          <span className="font-semibold text-zinc-100">{activeCount}</span>
+          <span className="font-semibold tabular-nums text-zinc-100">{activeCount}</span>
           {" of "}
-          <span className="font-semibold text-zinc-100">{totalCount}</span>
+          <span className="font-semibold tabular-nums text-zinc-100">{totalCount}</span>
           {" plugins active"}
           <span className="mx-2 text-zinc-500">|</span>
           <span className="text-zinc-400">
             ~{formatTokenCount(totalEstimatedTokens)} tokens/turn
           </span>
         </p>
-      </div>
     </div>
   );
 };
@@ -55,12 +54,12 @@ const STATUS_OPTIONS: { value: StatusFilterOption; label: string }[] = [
 
 const StatusFilter = ({ active, onChange }: StatusFilterProps) => {
   return (
-    <div className="flex rounded-lg border border-[var(--border-accent)] bg-[var(--surface-raised)]">
+    <div className="flex h-9 rounded-lg ring-1 ring-[var(--border-accent)] bg-[var(--surface-raised)]">
       {STATUS_OPTIONS.map((opt) => (
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
-          className={`px-3 py-2 text-xs font-medium transition-colors ${
+          className={`px-3 text-xs font-medium transition-colors active:scale-[0.96] ${
             active === opt.value
               ? "bg-[var(--overlay-medium)] text-zinc-100"
               : "text-zinc-400 hover:text-zinc-200"
@@ -84,7 +83,7 @@ const LoadingState = () => {
 
 const ErrorState = ({ message }: { message: string }) => {
   return (
-    <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3">
+    <div className="rounded-lg bg-red-500/10 px-4 py-3 shadow-[inset_0_0_0_1px_rgba(239,68,68,0.2)]">
       <p className="text-sm text-red-400">Failed to load plugins: {message}</p>
     </div>
   );
@@ -107,7 +106,7 @@ const togglePlugin = async (
   projectPath: string | null
 ): Promise<void> => {
   const url = buildScopedUrl("/api/plugins/toggle", projectPath);
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pluginId, enabled }),
@@ -239,12 +238,12 @@ export const PluginsPage = ({ projectPath = null, onClearProject }: PluginsPageP
             />
 
             <div className="flex flex-wrap items-center gap-3">
-              <input
+              <Input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search plugins..."
-                className="flex-1 rounded-lg border border-[var(--border-accent)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-blue-500"
+                className="flex-1"
               />
               <StatusFilter active={statusFilter} onChange={setStatusFilter} />
             </div>
