@@ -97,7 +97,7 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
 
 export const validateProjectPath = async (decoded: string): Promise<string | undefined> => {
   // Must be absolute
-  if (!decoded.startsWith("/")) return undefined;
+  if (!isAbsolute(decoded)) return undefined;
   // Resolve to catch .. traversal
   const resolved = resolve(decoded);
   // Must be in the known projects allowlist
