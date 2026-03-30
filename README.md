@@ -1,7 +1,5 @@
 # Claude Code Dashboard
 
-![Claude Code Dashboard](claude-code-dashboard.png)
-
 A local web dashboard for managing Claude Code's settings, plugins, skills, MCP servers, hooks, profiles, and usage — per-project or globally.
 
 Built to solve token bloat: visualize what loads into every Claude Code session, toggle what you don't need, and track usage across projects.
