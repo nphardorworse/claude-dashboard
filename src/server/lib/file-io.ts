@@ -5,16 +5,31 @@ import { PATHS } from "./paths";
 export const readJsonFile = async <T = unknown>(
   path: string
 ): Promise<T | null> => {
+  let raw: string;
   try {
-    const raw = await readFile(path, "utf-8");
-    const trimmed = raw.trim();
-    if (!trimmed) return null;
-    return JSON.parse(trimmed) as T;
+    raw = await readFile(path, "utf-8");
   } catch (err: unknown) {
     if (err instanceof Error && (err as NodeJS.ErrnoException).code === "ENOENT") {
       return null;
     }
+    throw err;
+  }
+
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch (err: unknown) {
     if (err instanceof SyntaxError) {
+      // "Unexpected non-whitespace character after JSON at position 1234"
+      // means valid JSON exists but has trailing content (e.g. extra bracket) — recover it
+      const posMatch = /after JSON at position (\d+)/.exec(err.message);
+      if (posMatch) {
+        try {
+          return JSON.parse(trimmed.slice(0, Number(posMatch[1]))) as T;
+        } catch { /* fall through */ }
+      }
       console.warn(`[file-io] Malformed JSON in ${path}: ${err.message}. Treating as empty.`);
       return null;
     }
