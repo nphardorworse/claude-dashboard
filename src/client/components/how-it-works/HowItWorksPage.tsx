@@ -36,7 +36,7 @@ const BEGINNER_CONCEPTS: ConceptItem[] = [
     icon: <SkillsIcon />,
     title: "Skill",
     description:
-      'A skill is a specific capability provided by a plugin \u2014 like "code review", "write tests", or "create a PR". You invoke skills with slash commands (e.g., /commit). You can disable individual skills without disabling the whole plugin.',
+      'A skill is a specific capability \u2014 like "code review", "write tests", or "create a PR". Skills are often provided by plugins but can also exist independently. You invoke skills with slash commands (e.g., /commit). You can disable individual skills without disabling the whole plugin.',
   },
   {
     icon: <McpIcon />,
@@ -54,7 +54,7 @@ const BEGINNER_CONCEPTS: ConceptItem[] = [
     icon: <ProfilesIcon />,
     title: "Profile",
     description:
-      'A profile is a dashboard feature — not built into Claude Code itself. It\'s a saved configuration preset that includes enabled plugins, skills, hooks, and MCP server state. Instead of toggling everything one by one, you switch to a profile and the whole setup activates. The dashboard comes with presets like "core" (minimal), "mobile" (React Native focused), "web", and "full".',
+      "A profile is a dashboard feature \u2014 not built into Claude Code itself. It's a saved configuration preset that includes enabled plugins, skills, hooks, and MCP server state. Instead of toggling everything one by one, you switch to a profile and the whole setup activates. You can create your own profiles or save your current setup as a new preset.",
   },
 ];
 
@@ -69,7 +69,7 @@ const ADVANCED_CONCEPTS: ConceptItem[] = [
     icon: <SkillsIcon />,
     title: "Skill",
     description:
-      "Markdown files within plugin directories that define specialized prompts and tool-use patterns. Registered via frontmatter (name, description). Invoked via the Skill tool or slash commands. Can be toggled independently in settings.json under enabledSkills (a boolean map).",
+      "Markdown files that define specialized prompts and tool-use patterns. Often bundled within plugin directories, but can also exist independently. Registered via frontmatter (name, description). Invoked via the Skill tool or slash commands. Can be toggled independently in settings.json under enabledSkills (a boolean map).",
   },
   {
     icon: <McpIcon />,
@@ -397,7 +397,7 @@ const InsightsSection = ({ level }: { level: Level }) => {
         <h3 className="text-zinc-100 font-semibold mb-1">Warnings</h3>
         <p>
           Static analysis of config state. Current detection rules: high
-          aggregate token usage ({">"} 150k tokens/turn), duplicate plugin
+          aggregate token usage ({">"} 40% of context window), duplicate plugin
           entries enabled from multiple marketplaces, and high hook event
           count ({">"} 5 event types active).
         </p>

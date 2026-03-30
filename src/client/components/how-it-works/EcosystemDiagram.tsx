@@ -1,252 +1,197 @@
 type Level = "beginner" | "advanced";
+type EcosystemDiagramProps = { level: Level };
 
-type EcosystemDiagramProps = {
-  level: Level;
-};
+/* ── Theme-adaptive colours via CSS custom properties ── */
 
-const NODE_STYLE = {
-  fill: "var(--surface-raised)",
-  stroke: "var(--border-hairline)",
-  strokeWidth: 1.5,
-  rx: 10,
-};
+const TEXT = "var(--color-zinc-100)";
+const TEXT_DIM = "var(--color-zinc-400)";
+const LINE = "var(--border-accent)";
+const LINE_DIM = "var(--border-hairline)";
+const FILL = "var(--surface-overlay)";
+const FILL_CC = "var(--overlay-medium)";
+const BG = "var(--surface-raised)";
 
-const CENTER_NODE_STYLE = {
-  fill: "var(--overlay-subtle)",
-  stroke: "var(--border-hairline)",
-  strokeWidth: 2,
-  rx: 10,
-};
+/* Profiles accent – blue works on both dark and light backgrounds */
+const BLUE = "rgba(59, 130, 246, 0.5)";
+const BLUE_FILL = "rgba(59, 130, 246, 0.08)";
 
-const TEXT_PRIMARY = "var(--text-primary)";
-const TEXT_MUTED = "var(--text-muted, #a1a1aa)";
-const LINE_STROKE = "var(--border-hairline)";
-
-const BeginnerAnnotations = () => (
-  <g fontSize={10} fill={TEXT_MUTED}>
-    <text x={160} y={105} textAnchor="middle">
-      Add capabilities like code review, TDD
-    </text>
-    <text x={640} y={105} textAnchor="middle">
-      External tools &amp; data sources
-    </text>
-    <text x={160} y={365} textAnchor="middle">
-      Auto-run on events (e.g. before tool use)
-    </text>
-    <text x={640} y={365} textAnchor="middle">
-      Plugin presets for different workflows
-    </text>
-    <text x={95} y={195} textAnchor="middle">
-      Individual features
-    </text>
-    <text x={95} y={207} textAnchor="middle">
-      from plugins
-    </text>
-    <text x={225} y={195} textAnchor="middle">
-      Bundled server
-    </text>
-    <text x={225} y={207} textAnchor="middle">
-      configs
-    </text>
-  </g>
-);
+/* ── Layout ──
+ *  Column 1: Claude Code  (x 15–140)
+ *  Column 2: Profiles     (x 200–325)   accent, "dashboard feature"
+ *  Column 3: Plugins      (x 385–500)
+ *  Column 4: Skills / MCP Servers / Hooks  (x 565–670)
+ *
+ *  Solid arrows  = main flow (CC → Profiles → Plugins → outputs)
+ *  Dashed blue   = Profiles configures outputs directly
+ *  Dashed dim    = CC accesses everything at runtime
+ */
 
 export const EcosystemDiagram = ({ level }: EcosystemDiagramProps) => {
   const isBeginner = level === "beginner";
-  const viewBox = isBeginner ? "0 0 800 420" : "0 0 800 320";
-  const centerY = isBeginner ? 190 : 140;
-  const bottomY = isBeginner ? 310 : 240;
 
   return (
     <div className="rounded-xl bg-[var(--surface-raised)] p-5 ring-1 ring-[var(--border-hairline)] overflow-x-auto">
       <svg
-        viewBox={viewBox}
+        viewBox="0 0 700 300"
         role="img"
-        aria-label="Ecosystem diagram showing how Claude Code components connect"
-        style={{ minWidth: 500, maxWidth: "100%" }}
+        aria-label="Horizontal ecosystem diagram: Claude Code flows through Profiles and Plugins to Skills, MCP Servers, and Hooks"
+        style={{ minWidth: 520, maxWidth: "100%" }}
       >
-        {/* Center node */}
-        <rect
-          x={290}
-          y={centerY}
-          width={220}
-          height={50}
-          {...CENTER_NODE_STYLE}
-        />
-        <text
-          x={400}
-          y={centerY + 30}
-          textAnchor="middle"
-          fontSize={14}
-          fontWeight="bold"
-          fill={TEXT_PRIMARY}
-        >
-          Claude Code Session
+        {/* Arrow markers */}
+        <defs>
+          <marker id="ea" viewBox="0 0 10 7" refX="9" refY="3.5"
+            markerWidth="7" markerHeight="5" orient="auto">
+            <path d="M0,0.5 L9,3.5 L0,6.5" fill={LINE} />
+          </marker>
+          <marker id="ead" viewBox="0 0 10 7" refX="9" refY="3.5"
+            markerWidth="6" markerHeight="5" orient="auto">
+            <path d="M0,0.5 L9,3.5 L0,6.5" fill={LINE_DIM} />
+          </marker>
+          <marker id="eab" viewBox="0 0 10 7" refX="9" refY="3.5"
+            markerWidth="6" markerHeight="5" orient="auto">
+            <path d="M0,0.5 L9,3.5 L0,6.5" fill={BLUE} />
+          </marker>
+        </defs>
+
+        {/* ── Layer 1: Bypass arrows (behind nodes) ── */}
+
+        {/* CC → Plugins (arcs above Profiles) */}
+        <path d="M 140 133 C 205 88, 310 88, 385 133"
+          fill="none" stroke={LINE_DIM} strokeWidth={1.2}
+          strokeDasharray="4 3" markerEnd="url(#ead)" />
+
+        {/* CC → Skills (wide arc above everything) */}
+        <path d="M 140 126 C 140 12, 350 5, 563 44"
+          fill="none" stroke={LINE_DIM} strokeWidth={1.2}
+          strokeDasharray="4 3" markerEnd="url(#ead)" />
+
+        {/* CC → Hooks (wide arc below everything) */}
+        <path d="M 140 162 C 140 282, 350 290, 563 244"
+          fill="none" stroke={LINE_DIM} strokeWidth={1.2}
+          strokeDasharray="4 3" markerEnd="url(#ead)" />
+
+        {/* Profiles → Skills (blue, arcs above Plugins) */}
+        <path d="M 325 130 C 370 55, 490 35, 563 47"
+          fill="none" stroke={BLUE} strokeWidth={1.2}
+          strokeDasharray="4 3" markerEnd="url(#eab)" />
+
+        {/* Profiles → Hooks (blue, arcs below Plugins) */}
+        <path d="M 325 158 C 370 238, 490 260, 563 241"
+          fill="none" stroke={BLUE} strokeWidth={1.2}
+          strokeDasharray="4 3" markerEnd="url(#eab)" />
+
+        {/* ── Layer 2: Main flow arrows (solid) ── */}
+
+        {/* CC → Profiles */}
+        <line x1={140} y1={144} x2={197} y2={144}
+          stroke={LINE} strokeWidth={2} markerEnd="url(#ea)" />
+
+        {/* Profiles → Plugins */}
+        <line x1={325} y1={144} x2={382} y2={144}
+          stroke={LINE} strokeWidth={2} markerEnd="url(#ea)" />
+
+        {/* Plugins → Skills */}
+        <line x1={500} y1={133} x2={563} y2={52}
+          stroke={LINE} strokeWidth={2} markerEnd="url(#ea)" />
+
+        {/* Plugins → MCP Servers */}
+        <line x1={500} y1={144} x2={563} y2={144}
+          stroke={LINE} strokeWidth={2} markerEnd="url(#ea)" />
+
+        {/* Plugins → Hooks */}
+        <line x1={500} y1={155} x2={563} y2={236}
+          stroke={LINE} strokeWidth={2} markerEnd="url(#ea)" />
+
+        {/* ── Layer 3: Nodes ── */}
+
+        {/* Claude Code */}
+        <rect x={15} y={120} width={125} height={48} rx={10}
+          fill={FILL_CC} stroke={LINE} strokeWidth={1.5} />
+        <text x={78} y={149} textAnchor="middle"
+          fontSize={13} fontWeight={700} fill={TEXT}>
+          Claude Code
         </text>
 
-        {/* Top-left: Plugins */}
-        <rect x={80} y={40} width={160} height={44} {...NODE_STYLE} />
-        <text
-          x={160}
-          y={67}
-          textAnchor="middle"
-          fontSize={13}
-          fontWeight={600}
-          fill={TEXT_PRIMARY}
-        >
+        {/* Profiles (blue accent) */}
+        <rect x={200} y={120} width={125} height={48} rx={10}
+          fill={BLUE_FILL} stroke={BLUE} strokeWidth={1.5} />
+        <text x={263} y={148} textAnchor="middle"
+          fontSize={13} fontWeight={600} fill={TEXT}>
+          Profiles
+        </text>
+        <text x={263} y={184} textAnchor="middle"
+          fontSize={9} fill={BLUE} fontStyle="italic">
+          dashboard feature
+        </text>
+
+        {/* Plugins */}
+        <rect x={385} y={120} width={115} height={48} rx={10}
+          fill={FILL} stroke={LINE} strokeWidth={1.5} />
+        <text x={443} y={149} textAnchor="middle"
+          fontSize={13} fontWeight={600} fill={TEXT}>
           Plugins
         </text>
 
-        {/* Sub-nodes: Skills and MCPs */}
-        <rect x={50} y={120} width={90} height={32} {...NODE_STYLE} />
-        <text
-          x={95}
-          y={141}
-          textAnchor="middle"
-          fontSize={11}
-          fill={TEXT_PRIMARY}
-        >
+        {/* Skills */}
+        <rect x={565} y={30} width={105} height={40} rx={8}
+          fill={FILL} stroke={LINE} strokeWidth={1.5} />
+        <text x={618} y={55} textAnchor="middle"
+          fontSize={12} fontWeight={600} fill={TEXT}>
           Skills
         </text>
 
-        <rect x={180} y={120} width={90} height={32} {...NODE_STYLE} />
-        <text
-          x={225}
-          y={141}
-          textAnchor="middle"
-          fontSize={11}
-          fill={TEXT_PRIMARY}
-        >
-          MCPs
-        </text>
-
-        {/* Lines from Plugins to sub-nodes */}
-        <line
-          x1={130}
-          y1={84}
-          x2={95}
-          y2={120}
-          stroke={LINE_STROKE}
-          strokeWidth={2}
-        />
-        <line
-          x1={190}
-          y1={84}
-          x2={225}
-          y2={120}
-          stroke={LINE_STROKE}
-          strokeWidth={2}
-        />
-
-        {/* Top-right: MCP Servers */}
-        <rect x={560} y={40} width={160} height={44} {...NODE_STYLE} />
-        <text
-          x={640}
-          y={67}
-          textAnchor="middle"
-          fontSize={13}
-          fontWeight={600}
-          fill={TEXT_PRIMARY}
-        >
+        {/* MCP Servers */}
+        <rect x={565} y={124} width={105} height={40} rx={8}
+          fill={FILL} stroke={LINE} strokeWidth={1.5} />
+        <text x={618} y={149} textAnchor="middle"
+          fontSize={12} fontWeight={600} fill={TEXT}>
           MCP Servers
         </text>
 
-        {/* Bottom-left: Hooks */}
-        <rect x={80} y={bottomY} width={160} height={44} {...NODE_STYLE} />
-        <text
-          x={160}
-          y={bottomY + 27}
-          textAnchor="middle"
-          fontSize={13}
-          fontWeight={600}
-          fill={TEXT_PRIMARY}
-        >
+        {/* Hooks */}
+        <rect x={565} y={218} width={105} height={40} rx={8}
+          fill={FILL} stroke={LINE} strokeWidth={1.5} />
+        <text x={618} y={243} textAnchor="middle"
+          fontSize={12} fontWeight={600} fill={TEXT}>
           Hooks
         </text>
 
-        {/* Bottom-right: Profiles */}
-        <rect x={560} y={bottomY} width={160} height={44} {...NODE_STYLE} />
-        <text
-          x={640}
-          y={bottomY + 27}
-          textAnchor="middle"
-          fontSize={13}
-          fontWeight={600}
-          fill={TEXT_PRIMARY}
-        >
-          Profiles
-        </text>
+        {/* ── Layer 4: Beginner annotations & legend ── */}
+        {isBeginner && (
+          <g>
+            {/* Arrow labels with background halo */}
+            <text x={168} y={139} textAnchor="middle" fontSize={9}
+              fill={TEXT_DIM} stroke={BG} strokeWidth={3}
+              style={{ paintOrder: "stroke" }}>
+              configures
+            </text>
+            <text x={353} y={139} textAnchor="middle" fontSize={9}
+              fill={TEXT_DIM} stroke={BG} strokeWidth={3}
+              style={{ paintOrder: "stroke" }}>
+              activates
+            </text>
+            <text x={536} y={91} textAnchor="end" fontSize={9}
+              fill={TEXT_DIM} stroke={BG} strokeWidth={3}
+              style={{ paintOrder: "stroke" }}>
+              provides
+            </text>
 
-        {/* Lines from main nodes to center */}
-        {/* Plugins -> Center */}
-        <line
-          x1={240}
-          y1={62}
-          x2={290}
-          y2={centerY + 15}
-          stroke={LINE_STROKE}
-          strokeWidth={2}
-        />
-        {/* MCP Servers -> Center */}
-        <line
-          x1={560}
-          y1={62}
-          x2={510}
-          y2={centerY + 15}
-          stroke={LINE_STROKE}
-          strokeWidth={2}
-        />
-        {/* Hooks -> Center */}
-        <line
-          x1={240}
-          y1={bottomY + 22}
-          x2={290}
-          y2={centerY + 35}
-          stroke={LINE_STROKE}
-          strokeWidth={2}
-        />
-        {/* Profiles -> Center */}
-        <line
-          x1={560}
-          y1={bottomY + 22}
-          x2={510}
-          y2={centerY + 35}
-          stroke={LINE_STROKE}
-          strokeWidth={2}
-        />
+            {/* Legend */}
+            <g transform="translate(80, 286)" fontSize={9} fill={TEXT_DIM}>
+              <line x1={0} y1={0} x2={25} y2={0}
+                stroke={LINE} strokeWidth={2} />
+              <text x={30} y={3.5}>main flow</text>
 
-        {/* Dashed line: MCPs sub-node -> MCP Servers */}
-        <line
-          x1={270}
-          y1={136}
-          x2={560}
-          y2={62}
-          stroke={LINE_STROKE}
-          strokeWidth={1.5}
-          strokeDasharray="6 3"
-        />
+              <line x1={130} y1={0} x2={155} y2={0}
+                stroke={BLUE} strokeWidth={1.2} strokeDasharray="4 3" />
+              <text x={160} y={3.5}>profiles configure directly</text>
 
-        {/* Dashed arc: Profiles -> Plugins ("controls which plugins are active") */}
-        <path
-          d={`M 560 ${bottomY + 22} Q 400 ${bottomY + 100} 240 ${isBeginner ? 62 : 62}`}
-          fill="none"
-          stroke={LINE_STROKE}
-          strokeWidth={1.5}
-          strokeDasharray="6 3"
-        />
-        <text
-          x={400}
-          y={bottomY + 70}
-          textAnchor="middle"
-          fontSize={10}
-          fill={TEXT_MUTED}
-          fontStyle="italic"
-        >
-          controls which plugins are active
-        </text>
-
-        {/* Beginner annotations */}
-        {isBeginner ? <BeginnerAnnotations /> : null}
+              <line x1={360} y1={0} x2={385} y2={0}
+                stroke={LINE_DIM} strokeWidth={1.2} strokeDasharray="4 3" />
+              <text x={390} y={3.5}>runtime access</text>
+            </g>
+          </g>
+        )}
       </svg>
     </div>
   );

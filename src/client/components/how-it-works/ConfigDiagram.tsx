@@ -4,8 +4,8 @@ type ConfigDiagramProps = {
   level: Level;
 };
 
-const TEXT_PRIMARY = "var(--text-primary)";
-const TEXT_MUTED = "var(--text-muted, #a1a1aa)";
+const TEXT_PRIMARY = "var(--color-zinc-100)";
+const TEXT_MUTED = "var(--color-zinc-400)";
 const LINE_STROKE = "var(--border-hairline)";
 
 const RECT_WIDTH = 400;

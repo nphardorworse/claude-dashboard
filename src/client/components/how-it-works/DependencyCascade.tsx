@@ -21,7 +21,7 @@ const CASCADE_ITEMS: CascadeItem[] = [
     action: "Disable Plugin",
     badgeClass: "bg-red-500/15 text-red-400 ring-red-500/20",
     effects: [
-      { prefix: "├──", text: "All Skills → disabled", color: "red" },
+      { prefix: "├──", text: "All its skills → disabled", color: "red" },
       { prefix: "├──", text: "Bundled MCPs → disabled", color: "red" },
       { prefix: "└──", text: "Other plugins → unaffected", color: "green" },
     ],
@@ -40,8 +40,8 @@ const CASCADE_ITEMS: CascadeItem[] = [
     badgeClass: "bg-blue-500/15 text-blue-400 ring-blue-500/20",
     effects: [
       { prefix: "├──", text: "MCP tools → unavailable", color: "red" },
-      { prefix: "├──", text: "Parent plugin → still active", color: "green" },
-      { prefix: "└──", text: "Plugin skills → still active", color: "green" },
+      { prefix: "├──", text: "Parent plugin (if bundled) → still active", color: "green" },
+      { prefix: "└──", text: "Other skills & plugins → unaffected", color: "green" },
     ],
   },
   {
@@ -58,12 +58,12 @@ const CASCADE_ITEMS: CascadeItem[] = [
     effects: [
       {
         prefix: "├──",
-        text: "All current plugins → disabled first",
+        text: "Current plugins & skills → disabled, then profile's set applied",
         color: "red",
       },
       {
         prefix: "├──",
-        text: "Profile's plugins, skills, hooks → applied",
+        text: "Hooks → replaced entirely with profile's hooks",
         color: "red",
       },
       {

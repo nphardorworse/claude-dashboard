@@ -9,7 +9,7 @@ const TAB_ITEMS: TabItem[] = [
   {
     label: "Plugins",
     description:
-      "Browse all 60+ installed plugins. Search, filter by category or status, toggle on/off per project. See estimated token cost per plugin.",
+      "Browse all installed plugins. Search, filter by category or status, toggle on/off per project. See estimated token cost per plugin.",
   },
   {
     label: "Skills",
@@ -29,7 +29,7 @@ const TAB_ITEMS: TabItem[] = [
   {
     label: "Profiles",
     description:
-      "Configuration presets for different workflows. Switch between core/mobile/web/science/full with one click, or save your current setup as a custom profile. Each profile stores plugins, skills, hooks, and MCP state.",
+      "Configuration presets for different workflows. Create profiles for different use cases and switch between them with one click, or save your current setup as a new profile. Each profile stores plugins, skills, hooks, and MCP state.",
   },
   {
     label: "Usage",

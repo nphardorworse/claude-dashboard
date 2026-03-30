@@ -14,7 +14,7 @@ const BEGINNER_STEPS: Step[] = [
   {
     title: "Pick a Profile",
     detail:
-      'Go to Profiles tab. Start with "core" (13 plugins) if you want minimal, or "full" if you want everything.',
+      "Go to Profiles tab. Save your current setup as a profile, or create custom presets for different workflows.",
   },
   {
     title: "Review MCP Servers",
