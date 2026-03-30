@@ -11,7 +11,7 @@ export const getProjectDisplayName = (
   projectPath: string | null
 ): string | null => {
   if (!projectPath) return null;
-  const segments = projectPath.replace(/\/+$/, "").split("/");
+  const segments = projectPath.replace(/[/\\]+$/, "").split(/[/\\]/);
   return segments[segments.length - 1] || projectPath;
 };
 

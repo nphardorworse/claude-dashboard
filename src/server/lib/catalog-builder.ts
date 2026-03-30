@@ -1,4 +1,4 @@
-import { join } from "path";
+import { basename, join } from "path";
 import { PATHS, loadKnownProjects } from "./paths";
 import { readJsonFile } from "./file-io";
 import { checkMcpHealth } from "./mcp-health";
@@ -92,7 +92,7 @@ const scanProjectMcps = async (
       if (!raw) continue;
 
       const servers = parseMcpJson(raw);
-      const _projectName = projectPath.split("/").pop() ?? projectPath;
+      const _projectName = basename(projectPath);
 
       for (const [name, config] of Object.entries(servers)) {
         const entry = makeEntry(name, "project", config, healthMap, pinnedSet, {
@@ -109,7 +109,7 @@ const scanProjectMcps = async (
   return Array.from(groupsByProject.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([path, entries]) => {
-      const name = path.split("/").pop() ?? path;
+      const name = basename(path);
       return makeGroup(`Project: ${name}`, "project", entries);
     });
 };
@@ -252,7 +252,7 @@ export const buildCatalog = async (
   groups.push(...pluginGroups);
   groups.push(...projectGroups);
   for (const [pp, entries] of personalGroupsByProject) {
-    const projName = pp.split("/").pop() ?? pp;
+    const projName = basename(pp);
     const label = projectPath ? "Personal" : `Personal: ${projName}`;
     groups.push(makeGroup(label, "personal", entries));
   }

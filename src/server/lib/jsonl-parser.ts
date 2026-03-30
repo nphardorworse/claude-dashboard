@@ -103,7 +103,7 @@ const isToolResultContent = (content: unknown): boolean => {
 };
 
 const projectKeyFromPath = (projectPath: string): string => {
-  return projectPath.split("/").join("-");
+  return projectPath.split(/[/\\]/).join("-");
 };
 
 const SESSION_ID_RE = /^[a-f0-9-]{36,}$/;

@@ -139,6 +139,6 @@ export const getMcpJsonPath = (projectPath?: string): string => {
 };
 
 export const getProjectSessionsDir = (projectPath: string): string => {
-  const key = projectPath.split("/").join("-");
+  const key = projectPath.split(/[/\\]/).join("-");
   return join(PATHS.claudeDir, "projects", key);
 };

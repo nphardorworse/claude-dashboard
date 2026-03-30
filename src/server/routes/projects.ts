@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { basename, join, resolve } from "path";
+import { basename, isAbsolute, join, resolve } from "path";
 import { access } from "fs/promises";
 import { PATHS, loadKnownProjects } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
@@ -70,7 +70,7 @@ const decodeProjectPath = async (
   encoded: string
 ): Promise<{ valid: true; path: string } | { valid: false; error: string }> => {
   const decoded = Buffer.from(encoded, "base64").toString("utf-8");
-  if (!decoded.startsWith("/")) {
+  if (!isAbsolute(decoded)) {
     return { valid: false, error: "Project path must be absolute" };
   }
   const resolved = resolve(decoded);
