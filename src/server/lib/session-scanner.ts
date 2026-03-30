@@ -1,5 +1,5 @@
 import { readdir, readFile, stat } from "fs/promises";
-import { join, basename } from "path";
+import { join, basename, resolve } from "path";
 import { PATHS, getProjectSessionsDir, loadKnownProjects } from "./paths";
 import { readJsonFile } from "./file-io";
 
@@ -60,7 +60,7 @@ const parseSession = (raw: RawSessionMeta): SessionMeta | null => {
   return {
     sessionId: raw.session_id,
     sessionName: (raw as Record<string, unknown>).session_name as string ?? "",
-    projectPath: raw.project_path,
+    projectPath: resolve(raw.project_path),
     startTime: raw.start_time,
     durationMinutes: raw.duration_minutes ?? 0,
     userMessages: raw.user_message_count ?? 0,

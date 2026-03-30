@@ -22,8 +22,8 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
   try {
     const raw = await readFile(join(homedir(), ".claude.json"), "utf-8");
     const data = JSON.parse(raw);
-    for (const path of Object.keys(data.projects ?? {})) {
-      projects.add(path);
+    for (const p of Object.keys(data.projects ?? {})) {
+      projects.add(resolve(p));
     }
   } catch (err: unknown) {
     if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {

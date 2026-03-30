@@ -87,7 +87,13 @@ const projects = new Hono();
 projects.get("/", async (c) => {
   try {
     const claudeJson = await readJsonFile<ClaudeJson>(PATHS.claudeJson);
-    const projectsMap = claudeJson?.projects ?? {};
+    const rawProjectsMap = claudeJson?.projects ?? {};
+
+    // Build a normalized lookup so resolved paths match raw .claude.json keys
+    const projectsMap = new Map<string, ProjectMeta>();
+    for (const [key, val] of Object.entries(rawProjectsMap)) {
+      projectsMap.set(resolve(key), val);
+    }
 
     // loadKnownProjects merges .claude.json, session-meta, and project dirs
     const allPaths = await loadKnownProjects();
@@ -96,7 +102,7 @@ projects.get("/", async (c) => {
       Array.from(allPaths).map(async (path) => {
         if (isNodeModulesPath(path)) return null;
 
-        const meta = projectsMap[path] ?? {};
+        const meta = projectsMap.get(path) ?? {};
         const paths = projectPaths(path);
         const hasSettings = await pathExists(paths.settings);
         const hasLocalSettings = await pathExists(paths.localSettings);
