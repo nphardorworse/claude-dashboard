@@ -280,12 +280,13 @@ profiles.post("/switch", async (c) => {
       await ensureDir(dirname(settingsPath));
     }
 
-    // Save original settings for rollback if MCP write (step 2) fails
-    const originalSettings = await readJsonFile<SettingsFile>(settingsPath);
-
     // Step 1: Write plugins + skills + hooks to settings.json (locked)
+    // Capture original settings inside the lock for safe rollback if step 2 fails
+    let originalSettings: SettingsFile | null = null;
+
     await withFileLock(settingsPath, async () => {
-      const settings = (await readJsonFile<SettingsFile>(settingsPath)) ?? {};
+      originalSettings = await readJsonFile<SettingsFile>(settingsPath);
+      const settings = originalSettings ?? {};
 
       // When project-scoped, read global settings so we can override
       // globally-enabled plugins/skills that aren't in the profile
@@ -383,7 +384,12 @@ profiles.post("/switch", async (c) => {
       }).catch(async (mcpErr: unknown) => {
         // Rollback step 1 to avoid inconsistent state
         await withFileLock(settingsPath, async () => {
-          await writeJsonFile(settingsPath, originalSettings ?? {});
+          if (originalSettings !== null) {
+            await writeJsonFile(settingsPath, originalSettings);
+          } else {
+            // File didn't exist before — remove the one we created
+            await unlink(settingsPath).catch(() => {});
+          }
         });
         throw mcpErr;
       });

@@ -258,24 +258,27 @@ projects.put("/:projectPath/hooks", async (c) => {
       );
     }
 
-    await ensureDir(paths.claudeDir);
-    const settings =
-      (await readJsonFile<SettingsJson>(paths.settings)) ?? {};
-    const hooksMap = settings.hooks ?? {};
-
     const entriesCheck = validateHookEntries(eventHooks);
     if (!entriesCheck.valid) return c.json({ error: entriesCheck.error }, 400);
 
-    if (eventHooks.length === 0) {
-      delete hooksMap[event];
-    } else {
-      hooksMap[event] = eventHooks;
-    }
+    await ensureDir(paths.claudeDir);
 
-    settings.hooks = hooksMap;
-    await writeJsonFile(paths.settings, settings);
+    return await withFileLock(paths.settings, async () => {
+      const settings =
+        (await readJsonFile<SettingsJson>(paths.settings)) ?? {};
+      const hooksMap = settings.hooks ?? {};
 
-    return c.json({ ok: true });
+      if (eventHooks.length === 0) {
+        delete hooksMap[event];
+      } else {
+        hooksMap[event] = eventHooks;
+      }
+
+      settings.hooks = hooksMap;
+      await writeJsonFile(paths.settings, settings);
+
+      return c.json({ ok: true });
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
@@ -297,13 +300,16 @@ projects.put("/:projectPath/permissions", async (c) => {
     }
 
     await ensureDir(paths.claudeDir);
-    const localSettings =
-      (await readJsonFile<LocalSettingsJson>(paths.localSettings)) ?? {};
 
-    localSettings.permissions = { allow: permResult.value };
-    await writeJsonFile(paths.localSettings, localSettings);
+    return await withFileLock(paths.localSettings, async () => {
+      const localSettings =
+        (await readJsonFile<LocalSettingsJson>(paths.localSettings)) ?? {};
 
-    return c.json({ ok: true });
+      localSettings.permissions = { allow: permResult.value };
+      await writeJsonFile(paths.localSettings, localSettings);
+
+      return c.json({ ok: true });
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);
