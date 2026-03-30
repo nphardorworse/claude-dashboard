@@ -29,7 +29,7 @@ This dashboard lets you:
 
 - See exactly what's loading and how many tokens each plugin/skill costs
 - Toggle plugins, skills, MCPs, and hooks on/off — globally or per project
-- Switch between configuration profiles (core, mobile, web, science, full)
+- Switch between configuration profiles for different workflows
 - Track approximate session and weekly usage across projects
 - Set MCP defaults so new projects don't inherit everything
 - View warnings and health indicators for your setup
@@ -57,7 +57,7 @@ This dashboard lets you:
 
 ### Skills (`#/skills`)
 
-- All skills across installed plugins with toggle switches
+- All skills with toggle switches (plugin-bundled and standalone)
 - Toggle individual skills without disabling the parent plugin
 - Token cost estimates per skill
 - Search and filter by status
@@ -81,7 +81,7 @@ This dashboard lets you:
 
 ### Profiles (`#/profiles`)
 
-- Profile cards for each preset (core, mobile, web, science, full) and custom profiles
+- Profile cards for your saved presets and custom profiles
 - One-click switch: activate a profile globally or per-project
 - Active detection: compares current settings against each profile
 - Save current: snapshot the current effective state as a new profile
@@ -222,15 +222,17 @@ Plugin and skill token costs are estimated by scanning all text files in each pl
 tokens ≈ ceil(total_bytes / 3.5)
 ```
 
-Per-plugin thresholds:
-- **Low** (green): < 5,000 tokens
-- **Medium** (yellow): 5,000–50,000 tokens
-- **High** (red): > 50,000 tokens
+Per-plugin thresholds (% of context window):
+- **Low** (green): < 1%
+- **Medium** (yellow): 1–5%
+- **High** (red): > 5%
 
-Aggregate thresholds:
-- **Low**: < 50,000 total tokens/turn
-- **Medium**: 50,000–150,000
-- **High**: > 150,000 (warning shown)
+Aggregate thresholds (% of context window):
+- **Low**: < 15%
+- **Medium**: 15–40%
+- **High**: > 40% (warning shown)
+
+Context window defaults to 200k tokens, auto-detected from your most-used model (1M for Opus 4.6), or set manually in the Usage tab.
 
 ## Security
 
