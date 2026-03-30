@@ -5,6 +5,7 @@ import { readJsonFile } from "./file-io";
 
 export type SessionMeta = {
   sessionId: string;
+  sessionName: string;
   projectPath: string;
   startTime: string;
   durationMinutes: number;

@@ -136,7 +136,6 @@ const aggregateWindow = async (
           existing.messages += usage.messages;
           existing.inputTokens += usage.inputTokens;
           existing.outputTokens += usage.outputTokens;
-          return usage;
         })
       );
     }

@@ -143,6 +143,7 @@ export type SessionMeta = {
   usesWebSearch: boolean;
   usesTaskAgent: boolean;
   toolErrors: number;
+  lastModelUsed: string;
 };
 
 export type SessionsResponse = {
