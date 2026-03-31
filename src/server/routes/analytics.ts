@@ -1,28 +1,13 @@
 import { Hono } from "hono";
 import { getProjectPath, getSettingsPath, resolveSessionFilePath } from "../lib/paths";
 import { parseSessionJsonl } from "../lib/jsonl-parser";
-import { generateInsights, generateProjectInsights } from "../lib/insights";
+import { generateInsights } from "../lib/insights";
 import { scanPlugins } from "../lib/plugin-scanner";
 import { getSessionsForProject } from "../lib/session-scanner";
-import type { SessionAnalysis, Insight } from "../../shared/types";
+import type { SessionAnalysis, SessionCostSummary, Insight, ProjectAnalyticsResponse } from "../../shared/types";
 
 type SessionResponse = {
   analysis: SessionAnalysis;
-  insights: Insight[];
-};
-
-type ProjectAnalyticsResponse = {
-  totalCostUSD: number;
-  avgCostPerSession: number;
-  avgCacheHitRate: number;
-  peakContextSize: number;
-  modelBreakdown: Record<string, { costUSD: number }>;
-  topExpensiveSessions: Array<{
-    sessionId: string;
-    firstPrompt: string;
-    costUSD: number;
-    turns: number;
-  }>;
   insights: Insight[];
 };
 
@@ -66,6 +51,74 @@ analytics.get("/session/:sessionId", async (c) => {
   }
 });
 
+const toSummary = (analysis: SessionAnalysis, firstPrompt: string): SessionCostSummary => {
+  const turns = analysis.turns;
+
+  let totalToolOutputTokens = 0;
+  let totalContextGrowth = 0;
+  let contextSpikeCount = 0;
+  let contextSpikeToolPctSum = 0;
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCacheWriteTokens = 0;
+  let totalCacheReadTokens = 0;
+  let inputCostUSD = 0;
+  let outputCostUSD = 0;
+  let cacheWriteCostUSD = 0;
+  let cacheReadCostUSD = 0;
+
+  for (const t of turns) {
+    totalToolOutputTokens += t.toolOutputTokens;
+    totalInputTokens += t.inputTokens;
+    totalOutputTokens += t.outputTokens;
+    totalCacheWriteTokens += t.cacheCreationTokens;
+    totalCacheReadTokens += t.cacheReadTokens;
+    inputCostUSD += t.inputCostUSD;
+    outputCostUSD += t.outputCostUSD;
+    cacheWriteCostUSD += t.cacheWriteCostUSD;
+    cacheReadCostUSD += t.cacheReadCostUSD;
+  }
+
+  if (turns.length >= 2) {
+    const growth = turns[turns.length - 1].totalContextSize - turns[0].totalContextSize;
+    if (growth > 0) totalContextGrowth = growth;
+  }
+
+  for (let i = 1; i < turns.length; i++) {
+    const jump = turns[i].totalContextSize - turns[i - 1].totalContextSize;
+    if (jump > 50_000) {
+      contextSpikeCount++;
+      contextSpikeToolPctSum += jump > 0 ? Math.min((turns[i].toolOutputTokens / jump) * 100, 100) : 0;
+    }
+  }
+
+  return {
+    sessionId: analysis.sessionId,
+    startTime: turns[0]?.timestamp ?? "",
+    firstPrompt,
+    costUSD: analysis.totalCostUSD,
+    cacheHitRate: analysis.cacheHitRate,
+    peakContextSize: analysis.peakContextSize,
+    turnsCount: turns.length,
+    modelBreakdown: Object.fromEntries(
+      Object.entries(analysis.modelBreakdown).map(([m, s]) => [m, { costUSD: s.costUSD }])
+    ),
+    systemPromptEstimate: analysis.systemPromptEstimate,
+    totalInputTokens,
+    totalOutputTokens,
+    totalToolOutputTokens,
+    totalContextGrowth,
+    contextSpikeCount,
+    contextSpikeToolPctSum,
+    totalCacheWriteTokens,
+    totalCacheReadTokens,
+    inputCostUSD,
+    outputCostUSD,
+    cacheWriteCostUSD,
+    cacheReadCostUSD,
+  };
+};
+
 analytics.get("/project", async (c) => {
   try {
     const projectPath = await getProjectPath(c);
@@ -81,79 +134,31 @@ analytics.get("/project", async (c) => {
         new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
     );
 
-    const recentSessions = sorted.slice(0, 20);
-
     const settingsPath = getSettingsPath(projectPath);
     const plugins = await scanPlugins(settingsPath);
     const pluginTokenEstimate = plugins
       .filter((p) => p.enabled)
       .reduce((sum, p) => sum + p.estimatedTokens, 0);
 
-    const parsed: Array<{
-      analysis: SessionAnalysis;
-      firstPrompt: string;
-    }> = [];
+    const summaries: SessionCostSummary[] = [];
 
-    for (const session of recentSessions) {
+    for (const session of sorted) {
       const analysis = await parseSessionJsonl(
         session.sessionId,
         projectPath
       );
       if (!analysis) continue;
-      parsed.push({ analysis, firstPrompt: session.firstPrompt });
+      summaries.push(toSummary(analysis, session.firstPrompt));
     }
 
-    if (parsed.length === 0) {
+    if (summaries.length === 0) {
       return c.json({ error: "No detailed session data available" }, 404);
     }
 
-    let totalCostUSD = 0;
-    let cacheHitRateSum = 0;
-    let peakContextSize = 0;
-    const modelBreakdown: Record<string, { costUSD: number }> = {};
-
-    for (const { analysis } of parsed) {
-      totalCostUSD += analysis.totalCostUSD;
-      cacheHitRateSum += analysis.cacheHitRate;
-
-      if (analysis.peakContextSize > peakContextSize) {
-        peakContextSize = analysis.peakContextSize;
-      }
-
-      for (const [model, stats] of Object.entries(analysis.modelBreakdown)) {
-        if (!modelBreakdown[model]) {
-          modelBreakdown[model] = { costUSD: 0 };
-        }
-        modelBreakdown[model].costUSD += stats.costUSD;
-      }
-    }
-
-    const avgCostPerSession = totalCostUSD / parsed.length;
-    const avgCacheHitRate = cacheHitRateSum / parsed.length;
-
-    const topExpensiveSessions = [...parsed]
-      .sort((a, b) => b.analysis.totalCostUSD - a.analysis.totalCostUSD)
-      .slice(0, 5)
-      .map(({ analysis, firstPrompt }) => ({
-        sessionId: analysis.sessionId,
-        firstPrompt,
-        costUSD: analysis.totalCostUSD,
-        turns: analysis.turns.length,
-      }));
-
-    const insights = generateProjectInsights(
-      parsed.map((p) => p.analysis),
-      pluginTokenEstimate
-    );
-
     const response: ProjectAnalyticsResponse = {
-      totalCostUSD,
-      avgCostPerSession,
-      avgCacheHitRate,
-      peakContextSize,
-      modelBreakdown,
-      topExpensiveSessions,
-      insights,
+      sessions: summaries,
+      totalSessionCount: sessions.length,
+      pluginTokenEstimate,
     };
 
     return c.json(response);
