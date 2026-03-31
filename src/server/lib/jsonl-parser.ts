@@ -1,6 +1,5 @@
-import { readFile, stat } from "fs/promises";
-import { join } from "path";
-import { PATHS } from "./paths";
+import { readFile } from "fs/promises";
+import { resolveSessionFilePath } from "./paths";
 import { calculateTurnCost } from "./pricing";
 import type { TurnUsage, SessionAnalysis } from "../../shared/types";
 
@@ -33,7 +32,7 @@ export const sumUsageAfterCutoff = async (
   projectPath: string,
   cutoffMs: number,
 ): Promise<WindowedUsage> => {
-  const filePath = findSessionJsonlPath(sessionId, projectPath);
+  const filePath = await resolveSessionFilePath(sessionId, projectPath);
   if (!filePath) return { messages: 0, inputTokens: 0, outputTokens: 0 };
 
   let raw: string;
@@ -102,30 +101,6 @@ const isToolResultContent = (content: unknown): boolean => {
   );
 };
 
-const projectKeyFromPath = (projectPath: string): string => {
-  return projectPath.split(/[/\\]/).join("-");
-};
-
-const SESSION_ID_RE = /^[a-f0-9-]{36,}$/;
-
-export const findSessionJsonlPath = (
-  sessionId: string,
-  projectPath: string
-): string | null => {
-  if (!SESSION_ID_RE.test(sessionId)) return null;
-  const key = projectKeyFromPath(projectPath);
-  const filePath = join(PATHS.claudeDir, "projects", key, `${sessionId}.jsonl`);
-  return filePath;
-};
-
-const fileExists = async (filePath: string): Promise<boolean> => {
-  try {
-    const s = await stat(filePath);
-    return s.isFile();
-  } catch {
-    return false;
-  }
-};
 
 // ─── JSONL entry parsing helpers ───────────────────────────
 
@@ -319,8 +294,8 @@ export const parseSessionJsonl = async (
     return cached.result;
   }
 
-  const filePath = findSessionJsonlPath(sessionId, projectPath);
-  if (!filePath || !(await fileExists(filePath))) {
+  const filePath = await resolveSessionFilePath(sessionId, projectPath);
+  if (!filePath) {
     return null;
   }
 

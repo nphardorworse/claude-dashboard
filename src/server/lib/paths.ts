@@ -1,7 +1,7 @@
 import { homedir } from "os";
 import { join, resolve, isAbsolute } from "path";
 import type { Context } from "hono";
-import { readFile, readdir } from "fs/promises";
+import { readFile, readdir, stat } from "fs/promises";
 
 const CLAUDE_DIR = join(homedir(), ".claude");
 
@@ -9,6 +9,16 @@ const CLAUDE_DIR = join(homedir(), ".claude");
 let knownProjectsCache: Set<string> | null = null;
 let knownProjectsCacheTime = 0;
 const KNOWN_PROJECTS_TTL_MS = 30_000;
+
+// Reverse map: resolved project path → actual directory path on disk
+// Populated during loadKnownProjects Source 3
+const projectDirMap = new Map<string, string>();
+
+// Session file index: sessionId → absolute file path
+// Populated lazily by scanning ~/.claude/projects/
+let sessionFileIndex: Map<string, string> | null = null;
+let sessionFileIndexTime = 0;
+const SESSION_INDEX_TTL_MS = 30_000;
 
 export const loadKnownProjects = async (): Promise<Set<string>> => {
   const now = Date.now();
@@ -58,6 +68,7 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
   }
 
   // Source 3: ~/.claude/projects/ dirs (read cwd from first JSONL)
+  projectDirMap.clear();
   try {
     const projectsDir = join(CLAUDE_DIR, "projects");
     const entries = await readdir(projectsDir);
@@ -75,7 +86,9 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
           try {
             const parsed = JSON.parse(line.trim());
             if (parsed.cwd && typeof parsed.cwd === "string" && isAbsolute(parsed.cwd)) {
-              projects.add(resolve(parsed.cwd));
+              const resolvedCwd = resolve(parsed.cwd);
+              projects.add(resolvedCwd);
+              projectDirMap.set(resolvedCwd, dirPath);
               break;
             }
           } catch { continue; }
@@ -139,6 +152,65 @@ export const getMcpJsonPath = (projectPath?: string): string => {
 };
 
 export const getProjectSessionsDir = (projectPath: string): string => {
+  // Use the actual directory discovered from disk if available
+  const mapped = projectDirMap.get(projectPath);
+  if (mapped) return mapped;
+  // Fallback: compute key from path
   const key = projectPath.split(/[/\\]/).join("-");
   return join(PATHS.claudeDir, "projects", key);
+};
+
+/**
+ * Build/refresh an index of sessionId → absolute JSONL file path by
+ * scanning all directories under ~/.claude/projects/.
+ */
+const ensureSessionFileIndex = async (): Promise<Map<string, string>> => {
+  const now = Date.now();
+  if (sessionFileIndex && now - sessionFileIndexTime < SESSION_INDEX_TTL_MS) {
+    return sessionFileIndex;
+  }
+
+  const index = new Map<string, string>();
+  const projectsDir = join(CLAUDE_DIR, "projects");
+  try {
+    const dirs = await readdir(projectsDir);
+    for (const dir of dirs) {
+      if (dir === ".DS_Store") continue;
+      try {
+        const dirPath = join(projectsDir, dir);
+        const files = await readdir(dirPath);
+        for (const file of files) {
+          if (file.endsWith(".jsonl")) {
+            const sid = file.slice(0, -6); // strip .jsonl
+            index.set(sid, join(dirPath, file));
+          }
+        }
+      } catch { continue; }
+    }
+  } catch { /* projects dir doesn't exist */ }
+
+  sessionFileIndex = index;
+  sessionFileIndexTime = now;
+  return index;
+};
+
+/**
+ * Resolve the absolute path to a session's JSONL file.
+ * Tries the computed path first, then falls back to the full index.
+ */
+export const resolveSessionFilePath = async (
+  sessionId: string,
+  projectPath: string
+): Promise<string | null> => {
+  // Fast path: computed directory
+  const dir = getProjectSessionsDir(projectPath);
+  const computed = join(dir, `${sessionId}.jsonl`);
+  try {
+    const s = await stat(computed);
+    if (s.isFile()) return computed;
+  } catch { /* not found at computed path */ }
+
+  // Fallback: scan all project directories
+  const index = await ensureSessionFileIndex();
+  return index.get(sessionId) ?? null;
 };
