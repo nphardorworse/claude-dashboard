@@ -20,14 +20,13 @@ const escapeControlCharsInStrings = (json: string): string =>
   );
 
 /**
- * Recover a JSON object from a null-byte-padded / truncated file.
+ * Recover a JSON object from a truncated or null-byte-padded file.
  * Strips nulls, then removes lines from the end until JSON.parse succeeds.
  */
 const recoverTruncatedJson = (raw: string): unknown | null => {
-  const nullPos = raw.indexOf("\x00");
-  if (nullPos < 0) return null;
-
-  const lines = raw.slice(0, nullPos).split("\n");
+  // Strip null bytes if present, then work with what remains
+  const cleaned = raw.replace(/\x00/g, "");
+  const lines = cleaned.split("\n");
 
   for (let i = lines.length; i > 0; i--) {
     const attempt = lines.slice(0, i).join("\n").trimEnd().replace(/,\s*$/, "");
