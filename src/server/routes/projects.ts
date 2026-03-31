@@ -5,6 +5,7 @@ import { PATHS, loadKnownProjects } from "../lib/paths";
 import { readJsonFile, writeJsonFile, ensureDir } from "../lib/file-io";
 import { withFileLock } from "../lib/file-lock";
 import { validatePermissions, validateHookEntries, validateHooksMap } from "../lib/validation";
+import { getSessionsForProject } from "../lib/session-scanner";
 
 type ModelUsageEntry = {
   inputTokens?: number;
@@ -108,6 +109,11 @@ projects.get("/", async (c) => {
         const hasLocalSettings = await pathExists(paths.localSettings);
         const hasMcpJson = await pathExists(paths.mcpJson);
 
+        // Use session-based costs (accurate) instead of .claude.json's
+        // lastModelUsage which is only a partial snapshot
+        const sessions = await getSessionsForProject(path);
+        const totalCostUSD = sessions.reduce((sum, s) => sum + s.costUSD, 0);
+
         const modelUsage = meta.lastModelUsage
           ? Object.entries(meta.lastModelUsage).map(([model, usage]) => ({
               model,
@@ -118,15 +124,13 @@ projects.get("/", async (c) => {
             }))
           : [];
 
-        const totalCostUSD = modelUsage.reduce((sum, m) => sum + m.costUSD, 0);
-
         return {
           path,
           name: basename(path),
           lastCost: meta.lastCost ?? null,
           totalCostUSD: totalCostUSD || (meta.lastCost ?? null),
           modelUsage,
-          sessions: meta.projectOnboardingSeenCount ?? 0,
+          sessions: sessions.length,
           hasSettings,
           hasLocalSettings,
           hasMcpJson,
