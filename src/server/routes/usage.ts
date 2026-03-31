@@ -2,12 +2,10 @@ import { Hono } from "hono";
 import { basename } from "path";
 import { getAllSessions } from "../lib/session-scanner";
 import { sumUsageAfterCutoff } from "../lib/jsonl-parser";
-import { getPricing } from "../lib/pricing";
+import { calculateTurnCost } from "../lib/pricing";
 import { readJsonFile } from "../lib/file-io";
 import { PATHS } from "../lib/paths";
 import type { SessionMeta, PlanLimits, UsageWindow, WindowedProjectUsage } from "../../shared/types";
-
-const SONNET_PRICING = getPricing("sonnet");
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -17,13 +15,6 @@ const DEFAULT_LIMITS: PlanLimits = {
   weeklyMessageLimit: null,
   sessionResetsAt: null,
   weeklyResetsAt: null,
-};
-
-const estimateCost = (inputTokens: number, outputTokens: number): number => {
-  return (
-    (inputTokens / 1_000_000) * SONNET_PRICING.input +
-    (outputTokens / 1_000_000) * SONNET_PRICING.output
-  );
 };
 
 type DashboardConfig = {
@@ -100,16 +91,21 @@ const resolveWeeklyWindow = (
  * - Sessions spanning the boundary → scan raw JSONL entries after cutoff (exact).
  * - Sessions fully before the window → skipped.
  */
+type ProjectAccum = {
+  sessions: number;
+  messages: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUSD: number;
+};
+
 const aggregateWindow = async (
   allSessions: SessionMeta[],
   cutoff: number,
   messageLimit: number | null,
   resetsInMs: number,
 ): Promise<UsageWindow> => {
-  const projectMap = new Map<
-    string,
-    { sessions: number; messages: number; inputTokens: number; outputTokens: number }
-  >();
+  const projectMap = new Map<string, ProjectAccum>();
 
   const boundaryParses: Promise<void>[] = [];
 
@@ -120,22 +116,30 @@ const aggregateWindow = async (
     if (endMs < cutoff) continue;
 
     const key = session.projectPath;
-    const existing = projectMap.get(key) ?? { sessions: 0, messages: 0, inputTokens: 0, outputTokens: 0 };
+    const existing = projectMap.get(key) ?? {
+      sessions: 0, messages: 0, inputTokens: 0, outputTokens: 0, costUSD: 0,
+    };
     existing.sessions += 1;
     projectMap.set(key, existing);
 
     if (startMs >= cutoff) {
-      // Fully inside window — use session totals
+      // Fully inside window — use pre-computed session cost
       existing.messages += session.userMessages;
       existing.inputTokens += session.inputTokens;
       existing.outputTokens += session.outputTokens;
+      existing.costUSD += session.costUSD;
     } else {
       // Spans boundary — scan raw JSONL entries with timestamp filter
       boundaryParses.push(
         sumUsageAfterCutoff(session.sessionId, session.projectPath, cutoff).then((usage) => {
           existing.messages += usage.messages;
-          existing.inputTokens += usage.inputTokens;
+          existing.inputTokens += usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens;
           existing.outputTokens += usage.outputTokens;
+          existing.costUSD += calculateTurnCost(
+            usage.lastModel || "sonnet",
+            usage.inputTokens, usage.outputTokens,
+            usage.cacheCreationTokens, usage.cacheReadTokens
+          );
         })
       );
     }
@@ -150,11 +154,10 @@ const aggregateWindow = async (
   const projects: WindowedProjectUsage[] = [];
 
   for (const [path, data] of projectMap) {
-    const cost = estimateCost(data.inputTokens, data.outputTokens);
     totalMessages += data.messages;
     totalInput += data.inputTokens;
     totalOutput += data.outputTokens;
-    totalCost += cost;
+    totalCost += data.costUSD;
 
     projects.push({
       name: basename(path),
@@ -163,7 +166,7 @@ const aggregateWindow = async (
       inputTokens: data.inputTokens,
       outputTokens: data.outputTokens,
       totalTokens: data.inputTokens + data.outputTokens,
-      estimatedCostUSD: cost,
+      estimatedCostUSD: data.costUSD,
       sessions: data.sessions,
     });
   }
@@ -197,19 +200,18 @@ usage.get("/", async (c) => {
 
     const projectMap = new Map<
       string,
-      { sessions: number; inputTokens: number; outputTokens: number }
+      { sessions: number; inputTokens: number; outputTokens: number; costUSD: number }
     >();
 
     for (const session of sessions) {
       const key = session.projectPath;
       const existing = projectMap.get(key) ?? {
-        sessions: 0,
-        inputTokens: 0,
-        outputTokens: 0,
+        sessions: 0, inputTokens: 0, outputTokens: 0, costUSD: 0,
       };
       existing.sessions += 1;
       existing.inputTokens += session.inputTokens;
       existing.outputTokens += session.outputTokens;
+      existing.costUSD += session.costUSD;
       projectMap.set(key, existing);
     }
 
@@ -229,8 +231,7 @@ usage.get("/", async (c) => {
     }[] = [];
 
     for (const [path, data] of projectMap) {
-      const cost = estimateCost(data.inputTokens, data.outputTokens);
-      totalCost += cost;
+      totalCost += data.costUSD;
       totalInput += data.inputTokens;
       totalOutput += data.outputTokens;
 
@@ -241,7 +242,7 @@ usage.get("/", async (c) => {
         inputTokens: data.inputTokens,
         outputTokens: data.outputTokens,
         totalTokens: data.inputTokens + data.outputTokens,
-        estimatedCostUSD: cost,
+        estimatedCostUSD: data.costUSD,
         percentage: 0,
       });
     }
@@ -258,7 +259,7 @@ usage.get("/", async (c) => {
       totalSessions: sessions.length,
       totalInputTokens: totalInput,
       totalOutputTokens: totalOutput,
-      pricingBasis: "sonnet" as const,
+      pricingBasis: "per-model" as const,
       dataSource: "session-meta" as const,
       projects,
     });
@@ -286,7 +287,7 @@ usage.get("/windowed", async (c) => {
       session,
       weekly,
       limits,
-      pricingBasis: "sonnet" as const,
+      pricingBasis: "per-model" as const,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

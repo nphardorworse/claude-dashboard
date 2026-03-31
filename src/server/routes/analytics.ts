@@ -142,13 +142,19 @@ analytics.get("/project", async (c) => {
 
     const summaries: SessionCostSummary[] = [];
 
-    for (const session of sorted) {
-      const analysis = await parseSessionJsonl(
-        session.sessionId,
-        projectPath
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < sorted.length; i += BATCH_SIZE) {
+      const batch = sorted.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map(async (session) => {
+          const analysis = await parseSessionJsonl(session.sessionId, projectPath);
+          if (!analysis) return null;
+          return toSummary(analysis, session.firstPrompt);
+        })
       );
-      if (!analysis) continue;
-      summaries.push(toSummary(analysis, session.firstPrompt));
+      for (const r of results) {
+        if (r) summaries.push(r);
+      }
     }
 
     if (summaries.length === 0) {
