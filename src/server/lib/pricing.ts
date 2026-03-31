@@ -62,3 +62,32 @@ export const calculateTurnCost = (
     (cacheRead / PER_MILLION) * pricing.cacheRead
   );
 };
+
+export type CostBreakdownResult = {
+  inputCostUSD: number;
+  outputCostUSD: number;
+  cacheWriteCostUSD: number;
+  cacheReadCostUSD: number;
+  totalCostUSD: number;
+};
+
+export const calculateCostBreakdown = (
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheCreation: number,
+  cacheRead: number
+): CostBreakdownResult => {
+  const pricing = getPricing(model);
+  const inputCostUSD = (inputTokens / PER_MILLION) * pricing.input;
+  const outputCostUSD = (outputTokens / PER_MILLION) * pricing.output;
+  const cacheWriteCostUSD = (cacheCreation / PER_MILLION) * pricing.cacheWrite;
+  const cacheReadCostUSD = (cacheRead / PER_MILLION) * pricing.cacheRead;
+  return {
+    inputCostUSD,
+    outputCostUSD,
+    cacheWriteCostUSD,
+    cacheReadCostUSD,
+    totalCostUSD: inputCostUSD + outputCostUSD + cacheWriteCostUSD + cacheReadCostUSD,
+  };
+};
