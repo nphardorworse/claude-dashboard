@@ -3,14 +3,10 @@ import { join, basename } from "path";
 import { PATHS } from "./paths";
 
 /**
- * Sanitize JSON text for common corruption: strip null bytes everywhere,
- * then escape remaining control characters inside string literals.
+ * Escape control characters inside JSON string literals.
  */
-const sanitizeJsonControlChars = (json: string): string => {
-  // Strip null bytes globally — they break parsing anywhere
-  const noNulls = json.replace(/\x00/g, "");
-  // Escape remaining control characters inside string literals
-  return noNulls.replace(/"(?:[^"\\]|\\[\s\S])*"/g, (match) =>
+const escapeControlCharsInStrings = (json: string): string =>
+  json.replace(/"(?:[^"\\]|\\[\s\S])*"/g, (match) =>
     match.replace(/[\x01-\x1F\x7F]/g, (ch) => {
       switch (ch) {
         case "\b": return "\\b";
@@ -22,6 +18,42 @@ const sanitizeJsonControlChars = (json: string): string => {
       }
     })
   );
+
+/**
+ * Recover a JSON object from a null-byte-padded / truncated file.
+ * Strips nulls, then removes lines from the end until JSON.parse succeeds.
+ */
+const recoverTruncatedJson = (raw: string): unknown | null => {
+  const nullPos = raw.indexOf("\x00");
+  if (nullPos < 0) return null;
+
+  const lines = raw.slice(0, nullPos).split("\n");
+
+  for (let i = lines.length; i > 0; i--) {
+    const attempt = lines.slice(0, i).join("\n").trimEnd().replace(/,\s*$/, "");
+
+    // Count unclosed braces/brackets to auto-close them
+    let braces = 0, brackets = 0, inStr = false, esc = false;
+    for (const ch of attempt) {
+      if (esc) { esc = false; continue; }
+      if (ch === "\\" && inStr) { esc = true; continue; }
+      if (ch === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === "{") braces++;
+      if (ch === "}") braces--;
+      if (ch === "[") brackets++;
+      if (ch === "]") brackets--;
+    }
+
+    const closing =
+      "]".repeat(Math.max(0, brackets)) +
+      "}".repeat(Math.max(0, braces));
+    try {
+      return JSON.parse(attempt + closing);
+    } catch { continue; }
+  }
+
+  return null;
 };
 
 export const readJsonFile = async <T = unknown>(
@@ -52,18 +84,15 @@ export const readJsonFile = async <T = unknown>(
         } catch { /* fall through */ }
       }
 
-      // Recovery 2: sanitize control characters / null bytes and retry
+      // Recovery 2: escape control characters in string literals
       try {
-        return JSON.parse(sanitizeJsonControlChars(trimmed)) as T;
+        return JSON.parse(escapeControlCharsInStrings(trimmed)) as T;
       } catch { /* fall through */ }
 
-      // Recovery 3: sanitize + truncate trailing content
-      if (posMatch) {
-        try {
-          const truncated = trimmed.slice(0, Number(posMatch[1]));
-          return JSON.parse(sanitizeJsonControlChars(truncated)) as T;
-        } catch { /* fall through */ }
-      }
+      // Recovery 3: null-byte-padded / truncated file — strip nulls,
+      // remove incomplete trailing lines, and close brackets
+      const recovered = recoverTruncatedJson(trimmed);
+      if (recovered !== null) return recovered as T;
 
       console.warn(`[file-io] Malformed JSON in ${path}: ${err.message}. Treating as empty.`);
       return null;
