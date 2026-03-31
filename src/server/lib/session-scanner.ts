@@ -2,29 +2,10 @@ import { readdir, readFile, stat } from "fs/promises";
 import { join, basename, resolve } from "path";
 import { PATHS, getProjectSessionsDir, loadKnownProjects } from "./paths";
 import { readJsonFile } from "./file-io";
+import { calculateTurnCost } from "./pricing";
+import type { SessionMeta } from "../../shared/types";
 
-export type SessionMeta = {
-  sessionId: string;
-  sessionName: string;
-  projectPath: string;
-  startTime: string;
-  durationMinutes: number;
-  userMessages: number;
-  assistantMessages: number;
-  toolCounts: Record<string, number>;
-  inputTokens: number;
-  outputTokens: number;
-  firstPrompt: string;
-  gitCommits: number;
-  linesAdded: number;
-  linesRemoved: number;
-  filesModified: number;
-  usesMcp: boolean;
-  usesWebSearch: boolean;
-  usesTaskAgent: boolean;
-  toolErrors: number;
-  lastModelUsed: string;
-};
+export type { SessionMeta };
 
 type RawSessionMeta = {
   session_id?: string;
@@ -57,17 +38,35 @@ let metaCacheTimestamp = 0;
 const parseSession = (raw: RawSessionMeta): SessionMeta | null => {
   if (!raw.session_id || !raw.project_path || !raw.start_time) return null;
 
+  const r = raw as Record<string, unknown>;
+  const inputTokens = raw.input_tokens ?? 0;
+  const outputTokens = raw.output_tokens ?? 0;
+  const cacheCreationTokens = (r.cache_creation_input_tokens as number) ?? 0;
+  const cacheReadTokens = (r.cache_read_input_tokens as number) ?? 0;
+  const lastModelUsed = (r.last_model_used as string) ?? "";
+
+  // If meta file has cache breakdown, use it. Otherwise inputTokens likely
+  // includes cache — use costUSD from the meta file if available, else estimate.
+  const metaCost = r.cost_usd as number | undefined;
+  const costUSD = metaCost ?? calculateTurnCost(
+    lastModelUsed || "sonnet",
+    inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens
+  );
+
   return {
     sessionId: raw.session_id,
-    sessionName: (raw as Record<string, unknown>).session_name as string ?? "",
+    sessionName: (r.session_name as string) ?? "",
     projectPath: resolve(raw.project_path),
     startTime: raw.start_time,
     durationMinutes: raw.duration_minutes ?? 0,
     userMessages: raw.user_message_count ?? 0,
     assistantMessages: raw.assistant_message_count ?? 0,
     toolCounts: raw.tool_counts ?? {},
-    inputTokens: raw.input_tokens ?? 0,
-    outputTokens: raw.output_tokens ?? 0,
+    inputTokens,
+    outputTokens,
+    cacheCreationTokens,
+    cacheReadTokens,
+    costUSD,
     firstPrompt: raw.first_prompt ?? "",
     gitCommits: raw.git_commits ?? 0,
     linesAdded: raw.lines_added ?? 0,
@@ -77,7 +76,7 @@ const parseSession = (raw: RawSessionMeta): SessionMeta | null => {
     usesWebSearch: raw.uses_web_search ?? false,
     usesTaskAgent: raw.uses_task_agent ?? false,
     toolErrors: raw.tool_errors ?? 0,
-    lastModelUsed: (raw as Record<string, unknown>).last_model_used as string ?? "",
+    lastModelUsed,
   };
 };
 
@@ -180,6 +179,9 @@ const parseJsonlForMeta = async (
   let assistantMessages = 0;
   let inputTokens = 0;
   let outputTokens = 0;
+  let cacheCreationTokens = 0;
+  let cacheReadTokens = 0;
+  let costUSD = 0;
   const toolCounts: Record<string, number> = {};
   let toolErrors = 0;
   let lastModelUsed = "";
@@ -238,10 +240,17 @@ const parseJsonlForMeta = async (
       }
       const usage = entry.message?.usage;
       if (usage) {
-        inputTokens += (usage.input_tokens ?? 0) +
-          (usage.cache_creation_input_tokens ?? 0) +
-          (usage.cache_read_input_tokens ?? 0);
-        outputTokens += usage.output_tokens ?? 0;
+        const turnInput = usage.input_tokens ?? 0;
+        const turnOutput = usage.output_tokens ?? 0;
+        const turnCacheCreate = usage.cache_creation_input_tokens ?? 0;
+        const turnCacheRead = usage.cache_read_input_tokens ?? 0;
+        inputTokens += turnInput;
+        outputTokens += turnOutput;
+        cacheCreationTokens += turnCacheCreate;
+        cacheReadTokens += turnCacheRead;
+        costUSD += calculateTurnCost(
+          lastModelUsed || "sonnet", turnInput, turnOutput, turnCacheCreate, turnCacheRead
+        );
       }
 
       // Detect tool use from assistant content
@@ -295,6 +304,9 @@ const parseJsonlForMeta = async (
     toolCounts,
     inputTokens,
     outputTokens,
+    cacheCreationTokens,
+    cacheReadTokens,
+    costUSD,
     firstPrompt,
     gitCommits: 0,
     linesAdded: 0,
@@ -375,6 +387,95 @@ const scanProjectJsonlSessions = async (
   return results;
 };
 
+// ─── JSONL cost enrichment for meta-file sessions ─────────
+
+type CostCacheEntry = { costUSD: number; mtimeMs: number; size: number };
+const costCache = new Map<string, CostCacheEntry>();
+
+const computeCostFromJsonl = async (filePath: string): Promise<number | null> => {
+  let raw: string;
+  try {
+    raw = await readFile(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+
+  let costUSD = 0;
+  let currentModel = "";
+
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    let entry: JsonlEntry;
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+
+    if (entry.type === "assistant") {
+      if (entry.message?.model) currentModel = entry.message.model;
+      const usage = entry.message?.usage;
+      if (usage) {
+        costUSD += calculateTurnCost(
+          currentModel || "sonnet",
+          usage.input_tokens ?? 0,
+          usage.output_tokens ?? 0,
+          usage.cache_creation_input_tokens ?? 0,
+          usage.cache_read_input_tokens ?? 0
+        );
+      }
+    }
+  }
+
+  return costUSD;
+};
+
+const enrichMetaSessionCosts = async (
+  metaSessions: SessionMeta[],
+  knownProjects: Set<string>
+): Promise<void> => {
+  const BATCH_SIZE = 10;
+  const toEnrich: Array<{ session: SessionMeta; filePath: string }> = [];
+
+  for (const session of metaSessions) {
+    const dir = getProjectSessionsDir(session.projectPath);
+    const filePath = join(dir, `${session.sessionId}.jsonl`);
+    toEnrich.push({ session, filePath });
+  }
+
+  for (let i = 0; i < toEnrich.length; i += BATCH_SIZE) {
+    const batch = toEnrich.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async ({ session, filePath }) => {
+        let fileStat;
+        try {
+          fileStat = await stat(filePath);
+        } catch {
+          return; // No JSONL file — keep meta estimate
+        }
+
+        const cached = costCache.get(session.sessionId);
+        if (cached && cached.mtimeMs === fileStat.mtimeMs && cached.size === fileStat.size) {
+          session.costUSD = cached.costUSD;
+          return;
+        }
+
+        const cost = await computeCostFromJsonl(filePath);
+        if (cost !== null) {
+          session.costUSD = cost;
+          costCache.set(session.sessionId, {
+            costUSD: cost,
+            mtimeMs: fileStat.mtimeMs,
+            size: fileStat.size,
+          });
+        }
+      })
+    );
+  }
+};
+
 // ─── Public API ────────────────────────────────────────────
 
 // Cache for the full scan (meta + JSONL across all projects)
@@ -388,8 +489,8 @@ export const getAllSessions = async (): Promise<SessionMeta[]> => {
     return cachedAllSessions;
   }
 
-  // Start with pre-generated meta files
-  const metaSessions = await loadMetaSessions();
+  // Start with pre-generated meta files — clone to avoid mutating the cache
+  const metaSessions = (await loadMetaSessions()).map((s) => ({ ...s }));
   const metaIds = new Set(metaSessions.map((s) => s.sessionId));
 
   // Scan JSONL files across all known projects for sessions missing from meta
@@ -399,6 +500,10 @@ export const getAllSessions = async (): Promise<SessionMeta[]> => {
       scanProjectJsonlSessions(projectPath, metaIds)
     )
   );
+
+  // Enrich cloned meta sessions with accurate JSONL-based costs
+  // (meta files don't have cache token breakdown, so their cost estimates are wrong)
+  await enrichMetaSessionCosts(metaSessions, knownProjects);
 
   const allJsonl = jsonlBatches.flat();
   const merged = [...metaSessions, ...allJsonl];
@@ -412,11 +517,11 @@ export const getAllSessions = async (): Promise<SessionMeta[]> => {
 export const getSessionsForProject = async (
   projectPath: string
 ): Promise<SessionMeta[]> => {
-  // Load from pre-generated meta files
+  // Load from pre-generated meta files — clone to avoid mutating the cache
   const allMeta = await loadMetaSessions();
-  const metaForProject = allMeta.filter(
-    (s) => s.projectPath === projectPath
-  );
+  const metaForProject = allMeta
+    .filter((s) => s.projectPath === projectPath)
+    .map((s) => ({ ...s }));
   const metaIds = new Set(metaForProject.map((s) => s.sessionId));
 
   // Scan JSONL files for sessions not in meta
@@ -424,6 +529,9 @@ export const getSessionsForProject = async (
     projectPath,
     metaIds
   );
+
+  // Enrich meta-file sessions with accurate JSONL-based costs
+  await enrichMetaSessionCosts(metaForProject, new Set([projectPath]));
 
   // Merge: meta sessions + JSONL-only sessions
   return [...metaForProject, ...jsonlSessions];
