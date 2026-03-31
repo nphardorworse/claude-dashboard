@@ -43,7 +43,7 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
     }
   }
 
-  // Source 2: session-meta files (sample recent ones)
+  // Source 2: session-meta files
   try {
     const metaDir = join(CLAUDE_DIR, "usage-data", "session-meta");
     const files = await readdir(metaDir);
@@ -52,9 +52,17 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
       jsonFiles.map(async (file) => {
         try {
           const raw = await readFile(join(metaDir, file), "utf-8");
-          const data = JSON.parse(raw);
-          if (data.project_path && typeof data.project_path === "string" && isAbsolute(data.project_path)) {
-            projects.add(resolve(data.project_path));
+          let projectPath: string | undefined;
+          try {
+            const data = JSON.parse(raw);
+            projectPath = data.project_path;
+          } catch {
+            // Malformed JSON — extract project_path via regex fallback
+            const match = /"project_path"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(raw);
+            if (match) projectPath = match[1];
+          }
+          if (projectPath && typeof projectPath === "string" && isAbsolute(projectPath)) {
+            projects.add(resolve(projectPath));
           }
         } catch { /* skip */ }
       })

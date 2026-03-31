@@ -2,6 +2,28 @@ import { readFile, writeFile, mkdir, rename, copyFile } from "fs/promises";
 import { join, basename } from "path";
 import { PATHS } from "./paths";
 
+/**
+ * Sanitize JSON text for common corruption: strip null bytes everywhere,
+ * then escape remaining control characters inside string literals.
+ */
+const sanitizeJsonControlChars = (json: string): string => {
+  // Strip null bytes globally — they break parsing anywhere
+  const noNulls = json.replace(/\x00/g, "");
+  // Escape remaining control characters inside string literals
+  return noNulls.replace(/"(?:[^"\\]|\\[\s\S])*"/g, (match) =>
+    match.replace(/[\x01-\x1F\x7F]/g, (ch) => {
+      switch (ch) {
+        case "\b": return "\\b";
+        case "\t": return "\\t";
+        case "\n": return "\\n";
+        case "\f": return "\\f";
+        case "\r": return "\\r";
+        default: return `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`;
+      }
+    })
+  );
+};
+
 export const readJsonFile = async <T = unknown>(
   path: string
 ): Promise<T | null> => {
@@ -22,14 +44,27 @@ export const readJsonFile = async <T = unknown>(
     return JSON.parse(trimmed) as T;
   } catch (err: unknown) {
     if (err instanceof SyntaxError) {
-      // "Unexpected non-whitespace character after JSON at position 1234"
-      // means valid JSON exists but has trailing content (e.g. extra bracket) — recover it
+      // Recovery 1: trailing content after valid JSON (e.g. extra bracket)
       const posMatch = /after JSON at position (\d+)/.exec(err.message);
       if (posMatch) {
         try {
           return JSON.parse(trimmed.slice(0, Number(posMatch[1]))) as T;
         } catch { /* fall through */ }
       }
+
+      // Recovery 2: sanitize control characters / null bytes and retry
+      try {
+        return JSON.parse(sanitizeJsonControlChars(trimmed)) as T;
+      } catch { /* fall through */ }
+
+      // Recovery 3: sanitize + truncate trailing content
+      if (posMatch) {
+        try {
+          const truncated = trimmed.slice(0, Number(posMatch[1]));
+          return JSON.parse(sanitizeJsonControlChars(truncated)) as T;
+        } catch { /* fall through */ }
+      }
+
       console.warn(`[file-io] Malformed JSON in ${path}: ${err.message}. Treating as empty.`);
       return null;
     }

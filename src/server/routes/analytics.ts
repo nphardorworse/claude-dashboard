@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { getProjectPath, getSettingsPath } from "../lib/paths";
+import { getProjectPath, getSettingsPath, resolveSessionFilePath } from "../lib/paths";
 import { parseSessionJsonl } from "../lib/jsonl-parser";
 import { generateInsights, generateProjectInsights } from "../lib/insights";
 import { scanPlugins } from "../lib/plugin-scanner";
@@ -31,10 +31,17 @@ const analytics = new Hono();
 analytics.get("/session/:sessionId", async (c) => {
   try {
     const sessionId = c.req.param("sessionId");
-    const projectPath = await getProjectPath(c);
+    let projectPath = await getProjectPath(c);
 
+    // If project path validation fails, still try to find the session
+    // by ID alone — resolveSessionFilePath has a fallback index
     if (!projectPath) {
-      return c.json({ error: "Missing ?project= query parameter" }, 400);
+      const found = await resolveSessionFilePath(sessionId, "");
+      if (!found) {
+        return c.json({ error: "Missing ?project= query parameter" }, 400);
+      }
+      // Use a placeholder project path for settings lookup
+      projectPath = "";
     }
 
     const analysis = await parseSessionJsonl(sessionId, projectPath);
@@ -43,7 +50,7 @@ analytics.get("/session/:sessionId", async (c) => {
       return c.json({ error: "Session JSONL not found or empty" }, 404);
     }
 
-    const settingsPath = getSettingsPath(projectPath);
+    const settingsPath = getSettingsPath(projectPath || undefined);
     const plugins = await scanPlugins(settingsPath);
     const pluginTokenEstimate = plugins
       .filter((p) => p.enabled)
