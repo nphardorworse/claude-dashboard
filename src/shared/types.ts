@@ -134,6 +134,9 @@ export type SessionMeta = {
   toolCounts: Record<string, number>;
   inputTokens: number;
   outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  costUSD: number;
   firstPrompt: string;
   gitCommits: number;
   linesAdded: number;
@@ -164,6 +167,19 @@ export type ProjectSettingsResponse = {
   };
 };
 
+// --- Cost breakdown (per-category detail) ---
+
+export type CostBreakdown = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
+  inputCostUSD: number;
+  outputCostUSD: number;
+  cacheWriteCostUSD: number;
+  cacheReadCostUSD: number;
+};
+
 // --- JSONL parser types ---
 
 export type TurnUsage = {
@@ -181,6 +197,11 @@ export type TurnUsage = {
   durationMs: number;
   contextAtStart: number;
   toolOutputTokens: number;
+  apiCallCount: number;
+  inputCostUSD: number;
+  outputCostUSD: number;
+  cacheWriteCostUSD: number;
+  cacheReadCostUSD: number;
 };
 
 export type SessionAnalysis = {
@@ -197,6 +218,38 @@ export type SessionAnalysis = {
     string,
     { inputTokens: number; outputTokens: number; costUSD: number }
   >;
+};
+
+// --- Cost analytics (per-session summary for client-side aggregation) ---
+
+export type SessionCostSummary = {
+  sessionId: string;
+  startTime: string;
+  firstPrompt: string;
+  costUSD: number;
+  cacheHitRate: number;
+  peakContextSize: number;
+  turnsCount: number;
+  modelBreakdown: Record<string, { costUSD: number }>;
+  systemPromptEstimate: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalToolOutputTokens: number;
+  totalContextGrowth: number;
+  contextSpikeCount: number;
+  contextSpikeToolPctSum: number;
+  totalCacheWriteTokens: number;
+  totalCacheReadTokens: number;
+  inputCostUSD: number;
+  outputCostUSD: number;
+  cacheWriteCostUSD: number;
+  cacheReadCostUSD: number;
+};
+
+export type ProjectAnalyticsResponse = {
+  sessions: SessionCostSummary[];
+  totalSessionCount: number;
+  pluginTokenEstimate: number;
 };
 
 // --- Usage types ---
@@ -217,7 +270,7 @@ export type UsageResponse = {
   totalSessions: number;
   totalInputTokens: number;
   totalOutputTokens: number;
-  pricingBasis: "sonnet";
+  pricingBasis: "per-model";
   dataSource: "session-meta";
   projects: ProjectUsage[];
 };
@@ -259,7 +312,7 @@ export type WindowedUsageResponse = {
   session: UsageWindow;
   weekly: UsageWindow;
   limits: PlanLimits;
-  pricingBasis: "sonnet";
+  pricingBasis: "per-model";
 };
 
 // --- Insights types ---
