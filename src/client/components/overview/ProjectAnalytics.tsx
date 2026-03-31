@@ -267,7 +267,7 @@ export const ProjectAnalytics = ({ projectPath, onSessionClick }: ProjectAnalyti
     );
   }
 
-  if (hasError || !raw || !stats) {
+  if (hasError || !raw) {
     return null;
   }
 
@@ -286,57 +286,65 @@ export const ProjectAnalytics = ({ projectPath, onSessionClick }: ProjectAnalyti
           <DateRangeSelector active={range} onChange={setRange} />
         </div>
 
+        {!stats && (
+          <p className="mt-4 text-xs text-zinc-500">No sessions found in this date range.</p>
+        )}
+
         <div className="mt-3">
           <CostExplainer />
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <AnalyticsMetricCard
-            label="Total Cost"
-            value={formatCost(stats.totalCost)}
-          />
-          <AnalyticsMetricCard
-            label="Avg Cost / Session"
-            value={formatCost(stats.avgCost)}
-          />
-          <AnalyticsMetricCard
-            label="Cache Hit Rate"
-            value={`${Math.round(stats.avgCacheHitRate * 100)}%`}
-          />
-          <AnalyticsMetricCard
-            label="Peak Context"
-            value={formatTokens(stats.peakContext)}
-          />
-        </div>
-
-        {stats.costBreakdown && (
-          <div className="mt-4">
-            <CostBreakdownTable data={stats.costBreakdown} />
-          </div>
-        )}
-
-        {stats.topExpensive.length > 0 && (
-          <div className="mt-5">
-            <h4 className="mb-2 text-xs font-semibold text-zinc-300">
-              Most Expensive Sessions
-            </h4>
-            <div className="flex flex-col gap-0.5">
-              {stats.topExpensive.slice(0, 3).map((session, idx) => (
-                <ExpensiveSessionRow
-                  key={session.sessionId}
-                  session={session}
-                  rank={idx + 1}
-                  onClick={() => onSessionClick(session.sessionId)}
-                />
-              ))}
+        {stats && (
+          <>
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <AnalyticsMetricCard
+                label="Total Cost"
+                value={formatCost(stats.totalCost)}
+              />
+              <AnalyticsMetricCard
+                label="Avg Cost / Session"
+                value={formatCost(stats.avgCost)}
+              />
+              <AnalyticsMetricCard
+                label="Cache Hit Rate"
+                value={`${Math.round(stats.avgCacheHitRate * 100)}%`}
+              />
+              <AnalyticsMetricCard
+                label="Peak Context"
+                value={formatTokens(stats.peakContext)}
+              />
             </div>
-          </div>
-        )}
 
-        {insights.length > 0 && (
-          <div className="mt-5">
-            <InsightCards insights={insights} />
-          </div>
+            {stats.costBreakdown && (
+              <div className="mt-4">
+                <CostBreakdownTable data={stats.costBreakdown} />
+              </div>
+            )}
+
+            {stats.topExpensive.length > 0 && (
+              <div className="mt-5">
+                <h4 className="mb-2 text-xs font-semibold text-zinc-300">
+                  Most Expensive Sessions
+                </h4>
+                <div className="flex flex-col gap-0.5">
+                  {stats.topExpensive.slice(0, 3).map((session, idx) => (
+                    <ExpensiveSessionRow
+                      key={session.sessionId}
+                      session={session}
+                      rank={idx + 1}
+                      onClick={() => onSessionClick(session.sessionId)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {insights.length > 0 && (
+              <div className="mt-5">
+                <InsightCards insights={insights} />
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
