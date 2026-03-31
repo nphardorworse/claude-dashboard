@@ -8,7 +8,7 @@ import { Input } from "~/client/components/ui/input";
 // ─── Types ────────────────────────────────────────────────
 
 type DateRange = "7d" | "30d" | "90d" | "all";
-type SortField = "date" | "duration" | "messages" | "tokens" | "lines" | "errors";
+type SortField = "date" | "duration" | "messages" | "tokens" | "lines" | "errors" | "cost";
 type SortDirection = "asc" | "desc";
 type GroupBy = "none" | "day" | "week";
 
@@ -61,6 +61,13 @@ const truncatePrompt = (prompt: string, maxLen = 60): string => {
   if (!prompt) return "-";
   if (prompt.length <= maxLen) return prompt;
   return `${prompt.slice(0, maxLen).trimEnd()  }...`;
+};
+
+const formatCost = (cost: number): string => {
+  if (cost === 0) return "-";
+  if (cost < 0.01) return "<$0.01";
+  if (cost >= 1000) return `$${Math.round(cost).toLocaleString()}`;
+  return `$${cost.toFixed(2)}`;
 };
 
 const formatDuration = (minutes: number): string => {
@@ -145,6 +152,8 @@ const getSortValue = (s: SessionMeta, field: SortField): number => {
       return s.linesAdded + s.linesRemoved;
     case "errors":
       return s.toolErrors;
+    case "cost":
+      return s.costUSD;
   }
 };
 
@@ -466,7 +475,7 @@ const GroupHeader = ({ group, maxGroupTokens }: GroupHeaderProps) => {
 
   return (
     <tr>
-      <td colSpan={8} className="px-3 pt-5 pb-2">
+      <td colSpan={9} className="px-3 pt-5 pb-2">
         <div className="flex items-center gap-3">
           <span className="text-xs font-semibold text-zinc-200">
             {group.label}
@@ -568,6 +577,9 @@ const SessionRow = ({
             <span className="text-zinc-500">0</span>
           )}
         </td>
+        <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs tabular-nums text-zinc-200">
+          {formatCost(session.costUSD)}
+        </td>
       </tr>
       {isExpanded && (
         <SessionDeepDive
@@ -586,14 +598,14 @@ type SummaryBarProps = {
   totalSessions: number;
   filteredSessions: number;
   totalTokens: number;
-  totalCommits: number;
+  totalCost: number;
 };
 
 const SummaryBar = ({
   totalSessions,
   filteredSessions,
   totalTokens,
-  totalCommits,
+  totalCost,
 }: SummaryBarProps) => {
   const isFiltered = filteredSessions < totalSessions;
 
@@ -615,8 +627,10 @@ const SummaryBar = ({
       </span>
       <span className="text-zinc-500">|</span>
       <span>
-        <span className="font-medium text-zinc-200">{totalCommits}</span>{" "}
-        commits
+        <span className="font-medium text-zinc-200">
+          {formatCost(totalCost)}
+        </span>{" "}
+        total
       </span>
     </div>
   );
@@ -677,6 +691,14 @@ const TableHeader = ({ sortField, sortDirection, onSort }: TableHeaderProps) => 
       <SortableHeader
         label="Errors"
         field="errors"
+        activeSort={sortField}
+        direction={sortDirection}
+        onSort={onSort}
+        align="text-right"
+      />
+      <SortableHeader
+        label="Cost"
+        field="cost"
         activeSort={sortField}
         direction={sortDirection}
         onSort={onSort}
@@ -775,8 +797,8 @@ export const SessionHistory = ({
     [filteredSorted]
   );
 
-  const filteredCommits = useMemo(
-    () => filteredSorted.reduce((sum, s) => sum + s.gitCommits, 0),
+  const filteredCost = useMemo(
+    () => filteredSorted.reduce((sum, s) => sum + s.costUSD, 0),
     [filteredSorted]
   );
 
@@ -853,7 +875,7 @@ export const SessionHistory = ({
           totalSessions={sessions.length}
           filteredSessions={filteredSorted.length}
           totalTokens={filteredTokens}
-          totalCommits={filteredCommits}
+          totalCost={filteredCost}
         />
       </div>
 
