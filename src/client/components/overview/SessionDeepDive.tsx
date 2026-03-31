@@ -5,6 +5,9 @@ import { ContextGrowthChart } from "./ContextGrowthChart";
 import { ContextCompositionChart } from "./ContextCompositionChart";
 import { InsightCards } from "./InsightCards";
 import { Button } from "~/client/components/ui/button";
+import { CostExplainer } from "../shared/CostExplainer";
+import { CostTooltip } from "../shared/CostTooltip";
+import { HeaderTooltip } from "../shared/HeaderTooltip";
 
 type SessionDeepDiveProps = {
   sessionId: string;
@@ -324,7 +327,9 @@ const TurnTableRow = ({ turn, prevTurn, systemEstimate, maxContext }: TurnTableR
       {formatTokens(turn.cacheReadTokens)}
     </td>
     <td className="px-2 py-1.5 text-right font-mono tabular-nums text-zinc-200">
-      {formatCost(turn.costUSD)}
+      <CostTooltip turn={turn}>
+        <span className="cursor-help">{formatCost(turn.costUSD)}</span>
+      </CostTooltip>
     </td>
     <td className="w-[140px] min-w-[140px] px-2 py-1.5">
       <InlineCompositionBar
@@ -364,7 +369,7 @@ const TurnTable = ({ turns, systemPromptEstimate }: TurnTableProps) => {
           <thead>
             <tr className="border-b border-[var(--border-accent)]">
               <th className="px-2 py-1.5 text-[10px] font-medium text-zinc-500">
-                #
+                <HeaderTooltip label="#" tooltip="Turn: one prompt + all of Claude's work (tool calls, edits, searches) until your next prompt." />
               </th>
               <th className="px-2 py-1.5 text-[10px] font-medium text-zinc-500">
                 Prompt
@@ -379,16 +384,16 @@ const TurnTable = ({ turns, systemPromptEstimate }: TurnTableProps) => {
                 Latency
               </th>
               <th className="px-2 py-1.5 text-right text-[10px] font-medium text-blue-500/70">
-                In
+                <HeaderTooltip label="In" tooltip="Non-cached input tokens sent to Claude." className="justify-end text-blue-500/70" />
               </th>
               <th className="px-2 py-1.5 text-right text-[10px] font-medium text-rose-500/70">
-                Out
+                <HeaderTooltip label="Out" tooltip="Tokens Claude generates." className="justify-end text-rose-500/70" />
               </th>
               <th className="px-2 py-1.5 text-right text-[10px] font-medium text-emerald-500/70">
-                Cache
+                <HeaderTooltip label="Cache" tooltip="Tokens read from prompt cache (10× cheaper than input)." className="justify-end text-emerald-500/70" />
               </th>
               <th className="px-2 py-1.5 text-right text-[10px] font-medium text-zinc-500">
-                Cost
+                <HeaderTooltip label="Cost" tooltip="Sum of input + output + cache write + cache read costs. Hover a row for the breakdown." className="justify-end" />
               </th>
               <th className="px-2 py-1.5 text-[10px] font-medium text-zinc-500">
                 Context
@@ -512,6 +517,8 @@ export const SessionDeepDive = ({
                   value={formatTokens(data.analysis.peakContextSize)}
                 />
               </div>
+
+              <CostExplainer />
 
               {/* Context Composition — what's consuming the window */}
               <ContextCompositionChart
