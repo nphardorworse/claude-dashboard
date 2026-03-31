@@ -27,9 +27,11 @@ type CategoryRowProps = {
 
 const CategoryTableRow = ({ color, label, tokens, cost, pct }: CategoryRowProps) => (
   <tr className="border-b border-[var(--border-hairline)] text-[11px]">
-    <td className="flex items-center gap-2 px-2 py-1.5">
-      <span className={`h-2 w-2 shrink-0 rounded-sm ${color}`} />
-      <span className="font-medium text-zinc-300">{label}</span>
+    <td className="px-2 py-1.5">
+      <div className="flex items-center gap-2">
+        <span className={`h-2 w-2 shrink-0 rounded-sm ${color}`} />
+        <span className="font-medium text-zinc-300">{label}</span>
+      </div>
     </td>
     <td className="px-2 py-1.5 text-right font-mono tabular-nums text-zinc-400">
       {formatTokens(tokens)}
