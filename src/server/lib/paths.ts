@@ -47,7 +47,7 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
   try {
     const metaDir = join(CLAUDE_DIR, "usage-data", "session-meta");
     const files = await readdir(metaDir);
-    const jsonFiles = files.filter((f) => f.endsWith(".json")).slice(-200);
+    const jsonFiles = files.filter((f) => f.endsWith(".json"));
     await Promise.all(
       jsonFiles.map(async (file) => {
         try {
