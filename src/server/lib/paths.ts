@@ -140,6 +140,7 @@ export const PATHS = {
   dashboardConfig: join(CLAUDE_DIR, "dashboard-config.json"),
   skillsDir: join(CLAUDE_DIR, "skills"),
   agentSkillsDir: join(homedir(), ".agents", "skills"),
+  snapshotsDir: join(CLAUDE_DIR, "dashboard-snapshots"),
 };
 
 export const getProjectPath = async (c: Context): Promise<string | undefined> => {

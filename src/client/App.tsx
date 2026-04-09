@@ -7,6 +7,7 @@ import { ProfilesPage } from "./components/profiles/ProfilesPage";
 import { McpPage } from "./components/mcp/McpPage";
 import { HooksPage } from "./components/hooks-manager/HooksPage";
 import { UsagePage } from "./components/usage/UsagePage";
+import { TranscriptsPage } from "./components/transcripts/TranscriptsPage";
 import { HowItWorksPage } from "./components/how-it-works/HowItWorksPage";
 import { useRoute } from "./hooks/use-route";
 import { useProject } from "./hooks/use-project";
@@ -27,6 +28,7 @@ const PageRouter = ({ projectPath, onClearProject, onSelectProject }: PageRouter
   if (route === "/hooks") return <HooksPage projectPath={projectPath} onClearProject={onClearProject} />;
   if (route === "/profiles") return <ProfilesPage projectPath={projectPath} onClearProject={onClearProject} />;
   if (route === "/usage") return <UsagePage projectPath={projectPath} onClearProject={onClearProject} />;
+  if (route === "/transcripts") return <TranscriptsPage projectPath={projectPath} onClearProject={onClearProject} />;
   if (route === "/how-it-works") return <HowItWorksPage />;
   return <OverviewPage projectPath={projectPath} onClearProject={onClearProject} onSelectProject={onSelectProject} />;
 };
