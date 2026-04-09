@@ -2,10 +2,16 @@ import { useMemo, useState } from "react";
 import type { SessionMeta } from "../../../shared/types";
 import { Input } from "~/client/components/ui/input";
 
-const formatRelative = (iso: string): string => {
-  const d = new Date(iso).getTime();
-  if (!d) return "";
-  const diffMs = Date.now() - d;
+/** Compute the approximate end time of a session. */
+const endTimeMs = (session: SessionMeta): number => {
+  const start = new Date(session.startTime).getTime();
+  if (!start) return 0;
+  return start + session.durationMinutes * 60_000;
+};
+
+const formatRelative = (ms: number): string => {
+  if (!ms) return "";
+  const diffMs = Date.now() - ms;
   const m = Math.floor(diffMs / 60_000);
   const h = Math.floor(diffMs / 3_600_000);
   const days = Math.floor(diffMs / 86_400_000);
@@ -13,7 +19,7 @@ const formatRelative = (iso: string): string => {
   if (m < 60) return `${m}m ago`;
   if (h < 24) return `${h}h ago`;
   if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return new Date(ms).toLocaleDateString();
 };
 
 const truncate = (text: string, max = 48): string => {
@@ -35,8 +41,9 @@ export const SessionPicker = ({
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
+    // Sort by latest activity (end time), newest first
     const sorted = [...sessions].sort(
-      (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime(),
+      (a, b) => endTimeMs(b) - endTimeMs(a),
     );
     if (!query.trim()) return sorted;
     const q = query.toLowerCase();
@@ -87,7 +94,7 @@ export const SessionPicker = ({
                         {session.sessionName || truncate(session.firstPrompt)}
                       </span>
                       <span className="shrink-0 text-[10px] text-zinc-500">
-                        {formatRelative(session.startTime)}
+                        {formatRelative(endTimeMs(session))}
                       </span>
                     </div>
                     <div className="mt-0.5 flex items-center gap-2 text-[10px] text-zinc-500 tabular-nums">

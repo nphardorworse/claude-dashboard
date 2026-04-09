@@ -21,6 +21,7 @@ import {
 import { GlobeIcon, FolderIcon, XIcon } from "../shared/NavIcons";
 import { SessionPicker } from "./SessionPicker";
 import { TranscriptView } from "./TranscriptView";
+import type { TranscriptFilter, TranscriptOrder } from "./TranscriptView";
 import { SnapshotsList } from "./SnapshotsList";
 
 type TranscriptsPageProps = {
@@ -174,6 +175,10 @@ export const TranscriptsPage = ({
   const [transcript, setTranscript] = useState<TranscriptResponse | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
+
+  // Filter / order (shared across live and snapshot views)
+  const [filter, setFilter] = useState<TranscriptFilter>("all");
+  const [order, setOrder] = useState<TranscriptOrder>("asc");
 
   // Snapshot save state
   const [snapshotNote, setSnapshotNote] = useState("");
@@ -443,48 +448,78 @@ export const TranscriptsPage = ({
 
                 <div className="flex min-w-0 flex-col gap-3">
                   {selectedSession && (
-                    <Card>
-                      <CardContent className="p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
-                              Save snapshot
-                            </p>
-                            <p className="mt-1 text-xs text-zinc-400">
-                              Archives the current JSONL content so it survives
-                              compaction or rotation.
-                            </p>
+                    <>
+                      {/* Session header — shows session ID for `claude --resume` */}
+                      <Card>
+                        <CardContent className="p-4">
+                          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                            {selectedSession.sessionName && (
+                              <span className="text-sm font-semibold text-zinc-100">
+                                {selectedSession.sessionName}
+                              </span>
+                            )}
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                              Session ID
+                            </span>
+                            <code className="select-all rounded bg-[var(--overlay-subtle)] px-2 py-0.5 font-mono text-xs text-zinc-200">
+                              {selectedSession.sessionId}
+                            </code>
+                            <span className="text-[10px] text-zinc-500">
+                              Resume: <code className="font-mono text-zinc-400">claude --resume {selectedSession.sessionId}</code>
+                            </span>
                           </div>
-                          <div className="flex flex-1 items-center gap-2 min-w-[240px]">
-                            <Input
-                              type="text"
-                              value={snapshotNote}
-                              onChange={(e) => setSnapshotNote(e.target.value)}
-                              placeholder="Optional note (e.g. 'pre-refactor')"
-                              className="flex-1 text-xs"
-                              maxLength={500}
-                              disabled={isSaving}
-                            />
-                            <Button
-                              variant="default"
-                              size="sm"
-                              onClick={handleSaveSnapshot}
-                              disabled={isSaving || !transcript}
-                            >
-                              {isSaving ? "Saving…" : "Save Snapshot"}
-                            </Button>
+                        </CardContent>
+                      </Card>
+
+                      {/* Snapshot save */}
+                      <Card>
+                        <CardContent className="p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                                Save snapshot
+                              </p>
+                              <p className="mt-1 text-xs text-zinc-400">
+                                Archives the current JSONL content so it survives
+                                compaction or rotation.
+                                {filter !== "all" && (
+                                  <span className="ml-1 text-blue-400">
+                                    (full raw data is always preserved; filter is saved as default view)
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                            <div className="flex flex-1 items-center gap-2 min-w-[240px]">
+                              <Input
+                                type="text"
+                                value={snapshotNote}
+                                onChange={(e) => setSnapshotNote(e.target.value)}
+                                placeholder="Optional note (e.g. 'pre-refactor')"
+                                className="flex-1 text-xs"
+                                maxLength={500}
+                                disabled={isSaving}
+                              />
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={handleSaveSnapshot}
+                                disabled={isSaving || !transcript}
+                              >
+                                {isSaving ? "Saving…" : "Save Snapshot"}
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                        {saveError && (
-                          <p className="mt-2 text-xs text-red-400">{saveError}</p>
-                        )}
-                        {saveMessage && (
-                          <p className="mt-2 text-xs text-green-400">
-                            {saveMessage}
-                          </p>
-                        )}
-                      </CardContent>
-                    </Card>
+                          {saveError && (
+                            <p className="mt-2 text-xs text-red-400">{saveError}</p>
+                          )}
+                          {saveMessage && (
+                            <p className="mt-2 text-xs text-green-400">
+                              {saveMessage}
+                            </p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </>
                   )}
 
                   {transcriptLoading && (
@@ -503,7 +538,13 @@ export const TranscriptsPage = ({
                   )}
 
                   {!transcriptLoading && !transcriptError && transcript && (
-                    <TranscriptView transcript={transcript} />
+                    <TranscriptView
+                      transcript={transcript}
+                      filter={filter}
+                      onFilterChange={setFilter}
+                      order={order}
+                      onOrderChange={setOrder}
+                    />
                   )}
 
                   {!selectedSession && (
@@ -549,7 +590,13 @@ export const TranscriptsPage = ({
               {!snapshotDetailLoading &&
                 !snapshotDetailError &&
                 snapshotTranscript && (
-                  <TranscriptView transcript={snapshotTranscript} />
+                  <TranscriptView
+                    transcript={snapshotTranscript}
+                    filter={filter}
+                    onFilterChange={setFilter}
+                    order={order}
+                    onOrderChange={setOrder}
+                  />
                 )}
             </div>
           </TabsContent>
