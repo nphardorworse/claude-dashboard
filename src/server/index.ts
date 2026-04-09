@@ -13,6 +13,7 @@ import { sessions } from "./routes/sessions";
 import { defaults } from "./routes/defaults";
 import { analytics } from "./routes/analytics";
 import { usage } from "./routes/usage";
+import { transcripts } from "./routes/transcripts";
 import { initToken, getToken, authMiddleware } from "./lib/auth";
 
 const app = new Hono();
@@ -39,6 +40,7 @@ app.route("/api/sessions", sessions);
 app.route("/api/defaults", defaults);
 app.route("/api/analytics", analytics);
 app.route("/api/usage", usage);
+app.route("/api/transcripts", transcripts);
 
 const PORT = 3847;
 

@@ -315,6 +315,55 @@ export type WindowedUsageResponse = {
   pricingBasis: "per-model";
 };
 
+// --- Transcript / snapshot types ---
+
+export type TranscriptEntryRole = "user" | "assistant" | "summary" | "system";
+
+export type TranscriptEntry = {
+  index: number;
+  role: TranscriptEntryRole;
+  timestamp: string;
+  text: string;
+  toolUses: { name: string; input?: unknown }[];
+  toolResults: { text: string; isError: boolean }[];
+  model?: string;
+};
+
+export type TranscriptResponse = {
+  sessionId: string;
+  projectPath: string;
+  startTime: string;
+  endTime: string;
+  entries: TranscriptEntry[];
+  totalUserMessages: number;
+  totalAssistantMessages: number;
+  rawBytes: number;
+};
+
+export type SnapshotMeta = {
+  id: string;                // filename stem
+  sessionId: string;
+  sessionName: string;       // from custom-title JSONL entry (may be empty)
+  projectPath: string;
+  createdAt: string;          // ISO timestamp snapshot was created
+  sessionStartTime: string;
+  entryCount: number;
+  userMessageCount: number;
+  assistantMessageCount: number;
+  sizeBytes: number;
+  note: string;
+  conversationOnly: boolean;  // true if saved with conversation-only filter
+};
+
+export type SnapshotListResponse = {
+  snapshots: SnapshotMeta[];
+};
+
+export type SnapshotDetailResponse = {
+  meta: SnapshotMeta;
+  transcript: TranscriptResponse;
+};
+
 // --- Insights types ---
 
 export type Insight = {

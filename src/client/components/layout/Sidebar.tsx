@@ -12,6 +12,7 @@ import {
   ProfilesIcon,
   UsageIcon,
   HowItWorksIcon,
+  TranscriptsIcon,
 } from "../shared/NavIcons";
 
 type NavItem = {
@@ -28,6 +29,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Hooks", hash: "/hooks", icon: <HooksIcon /> },
   { label: "Profiles", hash: "/profiles", icon: <ProfilesIcon /> },
   { label: "Usage", hash: "/usage", icon: <UsageIcon /> },
+  { label: "Transcripts", hash: "/transcripts", icon: <TranscriptsIcon /> },
   { label: "How it Works", hash: "/how-it-works", icon: <HowItWorksIcon /> },
 ];
 
