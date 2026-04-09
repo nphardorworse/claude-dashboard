@@ -35,8 +35,11 @@ const fetchSessions = async (
   projectPath: string | null,
 ): Promise<SessionMeta[]> => {
   const url = buildScopedUrl("/api/sessions", projectPath);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const res = await apiFetch(url);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
   const data: SessionsResponse = await res.json();
   return data.sessions;
 };
@@ -49,7 +52,7 @@ const fetchTranscript = async (
     `/api/transcripts/session/${encodeURIComponent(sessionId)}`,
     projectPath,
   );
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -61,8 +64,11 @@ const fetchSnapshots = async (
   projectPath: string | null,
 ): Promise<SnapshotMeta[]> => {
   const url = buildScopedUrl("/api/transcripts/snapshots", projectPath);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const res = await apiFetch(url);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
   const data: SnapshotListResponse = await res.json();
   return data.snapshots;
 };
@@ -70,7 +76,7 @@ const fetchSnapshots = async (
 const fetchSnapshotDetail = async (
   snapshotId: string,
 ): Promise<SnapshotDetailResponse> => {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/transcripts/snapshots/${encodeURIComponent(snapshotId)}`,
   );
   if (!res.ok) {
@@ -110,28 +116,16 @@ const deleteSnapshot = async (snapshotId: string): Promise<void> => {
   }
 };
 
-const deleteSession = async (
-  sessionId: string,
-  projectPath: string,
-  confirm: string,
-): Promise<void> => {
-  const res = await apiFetch(
-    `/api/transcripts/session/${encodeURIComponent(sessionId)}`,
-    {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm, projectPath }),
-    },
-  );
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `HTTP ${res.status}`);
-  }
-};
-
 const importSnapshot = async (file: File): Promise<SnapshotMeta> => {
   const text = await file.text();
-  const parsed = JSON.parse(text);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(
+      "Selected file is not valid JSON. Please pick a snapshot file exported from this dashboard.",
+    );
+  }
   const res = await apiFetch("/api/transcripts/snapshots/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -239,12 +233,6 @@ export const TranscriptsPage = ({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  // Session delete confirmation (UI commented out — untested)
-  const [_showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
-  const [_isDeleting, setIsDeleting] = useState(false);
-  const [_deleteError, setDeleteError] = useState<string | null>(null);
-
   // Snapshots tab
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
   const [snapshotsLoading, setSnapshotsLoading] = useState(true);
@@ -258,6 +246,14 @@ export const TranscriptsPage = ({
   const [snapshotDetailError, setSnapshotDetailError] = useState<string | null>(
     null,
   );
+
+  // Per-action errors for snapshot operations — shown inline near each action
+  // so they don't blank out the snapshot list in the sidebar.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [spawnMessage, setSpawnMessage] = useState<string | null>(null);
 
   // Import file input ref
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -351,6 +347,13 @@ export const TranscriptsPage = ({
   useEffect(() => {
     setSelectedSnapshot(null);
     setSnapshotTranscript(null);
+    // Clear per-action state so stale errors/messages don't leak across scopes
+    setActionError(null);
+    setImportError(null);
+    setCopyError(null);
+    setCopyMessage(null);
+    setSaveError(null);
+    setSaveMessage(null);
   }, [projectPath]);
 
   useEffect(() => {
@@ -360,6 +363,13 @@ export const TranscriptsPage = ({
   // ── Load snapshot detail when selection changes ──
 
   useEffect(() => {
+    // Clear per-action state so a stale message from the previously selected
+    // snapshot doesn't leak into the new selection's header (especially
+    // spawnMessage, which contains a session ID tied to the prior snapshot).
+    setActionError(null);
+    setCopyError(null);
+    setCopyMessage(null);
+    setSpawnMessage(null);
     if (!selectedSnapshot) {
       setSnapshotTranscript(null);
       return;
@@ -398,6 +408,7 @@ export const TranscriptsPage = ({
       setIsSaving(true);
       setSaveError(null);
       setSaveMessage(null);
+      let saved = false;
       try {
         await saveSnapshot(
           selectedSession.sessionId,
@@ -405,64 +416,43 @@ export const TranscriptsPage = ({
           snapshotNote.trim(),
           conversationOnly,
         );
+        saved = true;
         setSnapshotNote("");
         setSaveMessage(
           conversationOnly ? "Conversation-only snapshot saved." : "Snapshot saved.",
         );
-        await loadSnapshots();
         window.setTimeout(() => setSaveMessage(null), 3000);
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         setIsSaving(false);
       }
+      // Refresh list after save resolves; list-load errors surface via snapshotsError,
+      // not saveError, so a successful save isn't misreported as a failure.
+      if (saved) await loadSnapshots();
     },
     [loadSnapshots, selectedSession, snapshotNote],
   );
-
-  // ── Session delete handler ──
-
-  const _handleDeleteSession = useCallback(async () => {
-    if (!selectedSession) return;
-    const expected = selectedSession.sessionId.slice(0, 8);
-    if (deleteConfirmInput !== expected) return;
-
-    setIsDeleting(true);
-    setDeleteError(null);
-    try {
-      await deleteSession(
-        selectedSession.sessionId,
-        selectedSession.projectPath,
-        deleteConfirmInput,
-      );
-      setSelectedSession(null);
-      setTranscript(null);
-      setShowDeleteConfirm(false);
-      setDeleteConfirmInput("");
-      await loadSessions();
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setIsDeleting(false);
-    }
-  }, [selectedSession, deleteConfirmInput, loadSessions]);
 
   // ── Snapshot delete handler ──
 
   const handleDeleteSnapshot = useCallback(
     async (snapshot: SnapshotMeta) => {
+      setActionError(null);
+      let deleted = false;
       try {
         await deleteSnapshot(snapshot.id);
+        deleted = true;
         if (selectedSnapshot?.id === snapshot.id) {
           setSelectedSnapshot(null);
           setSnapshotTranscript(null);
         }
-        await loadSnapshots();
       } catch (err) {
-        setSnapshotsError(
+        setActionError(
           err instanceof Error ? err.message : "Failed to delete snapshot",
         );
       }
+      if (deleted) await loadSnapshots();
     },
     [loadSnapshots, selectedSnapshot],
   );
@@ -471,11 +461,15 @@ export const TranscriptsPage = ({
 
   const handleExportSnapshot = useCallback(async () => {
     if (!selectedSnapshot) return;
+    setActionError(null);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/transcripts/snapshots/${encodeURIComponent(selectedSnapshot.id)}/export`,
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -486,7 +480,7 @@ export const TranscriptsPage = ({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err) {
-      setSnapshotsError(
+      setActionError(
         err instanceof Error ? err.message : "Failed to export snapshot",
       );
     }
@@ -499,12 +493,13 @@ export const TranscriptsPage = ({
       const file = e.target.files?.[0];
       if (!file) return;
       setIsImporting(true);
-      setSnapshotsError(null);
+      setImportError(null);
+      let imported = false;
       try {
         await importSnapshot(file);
-        await loadSnapshots();
+        imported = true;
       } catch (err) {
-        setSnapshotsError(
+        setImportError(
           err instanceof Error ? err.message : "Failed to import snapshot",
         );
       } finally {
@@ -512,23 +507,22 @@ export const TranscriptsPage = ({
         // Reset file input so the same file can be re-selected
         if (importInputRef.current) importInputRef.current.value = "";
       }
+      if (imported) await loadSnapshots();
     },
     [loadSnapshots],
   );
 
   // ── Spawn handler — creates a new session from snapshot JSONL ──
 
-  const [spawnMessage, setSpawnMessage] = useState<string | null>(null);
-
   const handleSpawnSession = useCallback(async () => {
     if (!selectedSnapshot) return;
     setSpawnMessage(null);
-    setSnapshotsError(null);
+    setActionError(null);
     try {
       const result = await spawnSession(selectedSnapshot.id);
       setSpawnMessage(result.command);
     } catch (err) {
-      setSnapshotsError(
+      setActionError(
         err instanceof Error ? err.message : "Failed to spawn session",
       );
     }
@@ -536,7 +530,7 @@ export const TranscriptsPage = ({
 
   // ── Copy conversation as readable text ──
 
-  const handleCopyContext = useCallback(() => {
+  const handleCopyContext = useCallback(async () => {
     if (!snapshotTranscript) return;
     const lines: string[] = [];
     for (const entry of snapshotTranscript.entries) {
@@ -549,7 +543,17 @@ export const TranscriptsPage = ({
       }
     }
     const text = lines.join("\n\n---\n\n");
-    navigator.clipboard.writeText(text);
+    setCopyError(null);
+    setCopyMessage(null);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyMessage("Copied to clipboard.");
+      window.setTimeout(() => setCopyMessage(null), 3000);
+    } catch (err) {
+      setCopyError(
+        err instanceof Error ? err.message : "Failed to copy to clipboard.",
+      );
+    }
   }, [snapshotTranscript]);
 
   const handleTabChange = useCallback((value: string) => {
@@ -650,63 +654,6 @@ export const TranscriptsPage = ({
                               Resume: <code className="font-mono text-zinc-400">claude --resume {selectedSession.sessionId}</code>
                             </span>
                           </div>
-                          {/* TODO: Session delete — disabled until tested
-                          <div className="mt-2">
-                            {!showDeleteConfirm ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setShowDeleteConfirm(true);
-                                  setDeleteConfirmInput("");
-                                  setDeleteError(null);
-                                }}
-                                className="text-[10px] text-red-400/60 hover:text-red-300 transition-snappy"
-                              >
-                                Delete session
-                              </button>
-                            ) : (
-                              <div className="flex flex-wrap items-center gap-2 rounded-md bg-red-500/5 px-3 py-2 ring-1 ring-red-500/20">
-                                <span className="text-[11px] text-red-300">
-                                  This permanently deletes the JSONL file. Type{" "}
-                                  <code className="font-mono font-semibold">{selectedSession.sessionId.slice(0, 8)}</code>{" "}
-                                  to confirm:
-                                </span>
-                                <Input
-                                  type="text"
-                                  value={deleteConfirmInput}
-                                  onChange={(e) => setDeleteConfirmInput(e.target.value)}
-                                  placeholder={selectedSession.sessionId.slice(0, 8)}
-                                  className="w-28 font-mono text-xs"
-                                />
-                                <Button
-                                  variant="destructive"
-                                  size="xs"
-                                  onClick={handleDeleteSession}
-                                  disabled={
-                                    isDeleting ||
-                                    deleteConfirmInput !== selectedSession.sessionId.slice(0, 8)
-                                  }
-                                >
-                                  {isDeleting ? "Deleting…" : "Delete"}
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="xs"
-                                  onClick={() => {
-                                    setShowDeleteConfirm(false);
-                                    setDeleteConfirmInput("");
-                                    setDeleteError(null);
-                                  }}
-                                >
-                                  Cancel
-                                </Button>
-                                {deleteError && (
-                                  <p className="w-full text-xs text-red-400">{deleteError}</p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          */}
                         </CardContent>
                       </Card>
 
@@ -807,6 +754,14 @@ export const TranscriptsPage = ({
           {/* ─── Snapshots tab ─── */}
 
           <TabsContent value="snapshots">
+            {/* Single hoisted file input — avoids duplicate refs across branches */}
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleImportFile}
+              className="hidden"
+            />
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr]">
               <div className="h-[72vh] min-h-[400px]">
                 <SnapshotPicker
@@ -866,13 +821,6 @@ export const TranscriptsPage = ({
                           <Button variant="outline" size="xs" onClick={handleCopyContext} disabled={!snapshotTranscript}>
                             Copy as Text
                           </Button>
-                          <input
-                            ref={importInputRef}
-                            type="file"
-                            accept=".json"
-                            onChange={handleImportFile}
-                            className="hidden"
-                          />
                           <Button
                             variant="outline"
                             size="xs"
@@ -887,6 +835,18 @@ export const TranscriptsPage = ({
                             </span>
                           )}
                         </div>
+                        {actionError && (
+                          <p className="mt-2 text-xs text-red-400">{actionError}</p>
+                        )}
+                        {importError && (
+                          <p className="mt-2 text-xs text-red-400">{importError}</p>
+                        )}
+                        {copyError && (
+                          <p className="mt-2 text-xs text-red-400">{copyError}</p>
+                        )}
+                        {copyMessage && (
+                          <p className="mt-2 text-xs text-green-400">{copyMessage}</p>
+                        )}
                         {spawnMessage && (
                           <div className="mt-2 flex items-center gap-2">
                             <code className="select-all rounded bg-[var(--overlay-subtle)] px-2 py-1 font-mono text-xs text-green-400">
@@ -936,13 +896,6 @@ export const TranscriptsPage = ({
                             : "Select a snapshot from the list to view its transcript."}
                         </p>
                         <div>
-                          <input
-                            ref={importInputRef}
-                            type="file"
-                            accept=".json"
-                            onChange={handleImportFile}
-                            className="hidden"
-                          />
                           <Button
                             variant="outline"
                             size="sm"
@@ -952,6 +905,9 @@ export const TranscriptsPage = ({
                             {isImporting ? "Importing…" : "Import Snapshot"}
                           </Button>
                         </div>
+                        {importError && (
+                          <p className="text-xs text-red-400">{importError}</p>
+                        )}
                       </div>
                     </CardContent>
                   </Card>

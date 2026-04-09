@@ -100,10 +100,10 @@ This dashboard lets you:
 - **Session header:** Shows session name, full session ID, and `claude --resume` command
 - **Snapshots:** Save immutable copies of session transcripts that survive compaction, rotation, or deletion
   - **Save Full:** Archives the complete raw JSONL
-  - **Save Conversation Only:** Archives only user prompts and assistant text responses (no tool calls/results)
+  - **Save Conversation Only:** Archives only user prompts and assistant text responses (no tool calls/results) — archive-only, cannot be spawned as a new session
   - Snapshots are never overwritten — each save creates a new independent copy
 - **Export / Import:** Download snapshots as portable `.json` files, share with colleagues, import on another machine
-- **Spawn Session:** Creates a new Claude Code session (new UUID) seeded with a snapshot's conversation context — run `claude --resume <newId>` to continue from where the snapshot left off
+- **Spawn Session (full snapshots only):** Creates a new Claude Code session (new UUID) seeded with a snapshot's conversation context — run `claude --resume <newId>` to continue from where the snapshot left off
 
 ### How It Works (`#/how-it-works`)
 

@@ -1,4 +1,4 @@
-import { readFile, stat } from "fs/promises";
+import { readFile } from "fs/promises";
 import { resolveSessionFilePath } from "./paths";
 import type {
   TranscriptEntry,
@@ -99,9 +99,10 @@ const isToolResultOnly = (content: unknown): boolean => {
   );
 };
 
-/** Extract the session name from custom-title JSONL entries. */
+/** Returns the most recent custom-title set on the session. Claude Code may emit multiple custom-title entries if the user renames a session; the last one wins. */
 export const extractSessionName = (raw: string): string => {
   let name = "";
+  let malformed = 0;
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -111,8 +112,14 @@ export const extractSessionName = (raw: string): string => {
         name = entry.customTitle;
       }
     } catch {
+      malformed++;
       continue;
     }
+  }
+  if (malformed > 0) {
+    console.warn(
+      `[transcript-parser] extractSessionName: dropped ${malformed} malformed JSONL lines`,
+    );
   }
   return name;
 };
@@ -126,6 +133,7 @@ export const extractSessionName = (raw: string): string => {
  */
 export const filterConversationJsonl = (raw: string): string => {
   const kept: string[] = [];
+  let malformed = 0;
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -133,6 +141,7 @@ export const filterConversationJsonl = (raw: string): string => {
     try {
       entry = JSON.parse(trimmed);
     } catch {
+      malformed++;
       continue;
     }
 
@@ -163,6 +172,11 @@ export const filterConversationJsonl = (raw: string): string => {
       continue;
     }
   }
+  if (malformed > 0) {
+    console.warn(
+      `[transcript-parser] filterConversationJsonl: dropped ${malformed} malformed JSONL lines`,
+    );
+  }
   return kept.join("\n");
 };
 
@@ -179,6 +193,8 @@ export const parseTranscriptFromJsonl = (
   let userCount = 0;
   let assistantCount = 0;
   let idx = 0;
+  let malformed = 0;
+  let orphanToolResults = 0;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -188,6 +204,7 @@ export const parseTranscriptFromJsonl = (
     try {
       entry = JSON.parse(trimmed);
     } catch {
+      malformed++;
       continue;
     }
 
@@ -225,9 +242,13 @@ export const parseTranscriptFromJsonl = (
       // a new user turn.
       if (isToolResultOnly(content)) {
         const results = extractToolResults(content);
-        if (results.length > 0 && entries.length > 0) {
-          const last = entries[entries.length - 1];
-          last.toolResults.push(...results);
+        if (results.length > 0) {
+          const last = entries.length > 0 ? entries[entries.length - 1] : null;
+          if (last && last.role === "assistant") {
+            last.toolResults.push(...results);
+          } else {
+            orphanToolResults += results.length;
+          }
         }
         continue;
       }
@@ -267,6 +288,17 @@ export const parseTranscriptFromJsonl = (
     });
   }
 
+  if (malformed > 0) {
+    console.warn(
+      `[transcript-parser] parseTranscriptFromJsonl: dropped ${malformed} malformed JSONL lines (sessionId=${sessionId})`,
+    );
+  }
+  if (orphanToolResults > 0) {
+    console.warn(
+      `[transcript-parser] parseTranscriptFromJsonl: dropped ${orphanToolResults} orphan tool_result blocks with no preceding assistant entry (sessionId=${sessionId})`,
+    );
+  }
+
   return {
     sessionId,
     projectPath,
@@ -286,17 +318,20 @@ export const loadTranscript = async (
   const filePath = await resolveSessionFilePath(sessionId, projectPath);
   if (!filePath) return null;
 
-  try {
-    await stat(filePath);
-  } catch {
-    return null;
-  }
-
   let raw: string;
   try {
     raw = await readFile(filePath, "utf-8");
-  } catch {
-    return null;
+  } catch (err: unknown) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return null;
+    }
+    console.error(`[transcript-parser] loadTranscript failed to read ${filePath}:`, err);
+    throw err;
   }
 
   const transcript = parseTranscriptFromJsonl(raw, sessionId, projectPath);
