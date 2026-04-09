@@ -99,6 +99,73 @@ const isToolResultOnly = (content: unknown): boolean => {
   );
 };
 
+/** Extract the session name from custom-title JSONL entries. */
+export const extractSessionName = (raw: string): string => {
+  let name = "";
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const entry = JSON.parse(trimmed) as JsonlEntry;
+      if (entry.type === "custom-title" && entry.customTitle) {
+        name = entry.customTitle;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return name;
+};
+
+/**
+ * Filter JSONL to keep only conversation-level entries:
+ * - user entries with actual text (not tool-result-only)
+ * - assistant entries with text content (not tool-call-only internals)
+ * - summary entries
+ * - custom-title entries (metadata)
+ */
+export const filterConversationJsonl = (raw: string): string => {
+  const kept: string[] = [];
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let entry: JsonlEntry;
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+
+    const t = entry.type;
+
+    // Always keep summaries and custom-title metadata
+    if (t === "summary" || t === "custom-title") {
+      kept.push(trimmed);
+      continue;
+    }
+
+    if (t === "user") {
+      // Skip tool-result-only user entries
+      if (isToolResultOnly(entry.message?.content)) continue;
+      const text = extractText(entry.message?.content);
+      if (text.trim()) {
+        kept.push(trimmed);
+      }
+      continue;
+    }
+
+    if (t === "assistant") {
+      const text = extractText(entry.message?.content);
+      // Only keep assistant entries that have visible text
+      if (text.trim()) {
+        kept.push(trimmed);
+      }
+      continue;
+    }
+  }
+  return kept.join("\n");
+};
+
 export const parseTranscriptFromJsonl = (
   raw: string,
   sessionId: string,

@@ -1,8 +1,13 @@
 import { Hono } from "hono";
 import { readdir, readFile, stat, writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
-import { PATHS, getProjectPath } from "../lib/paths";
-import { loadTranscript, parseTranscriptFromJsonl } from "../lib/transcript-parser";
+import { PATHS, getProjectPath, getProjectSessionsDir, resolveSessionFilePath } from "../lib/paths";
+import {
+  loadTranscript,
+  parseTranscriptFromJsonl,
+  extractSessionName,
+  filterConversationJsonl,
+} from "../lib/transcript-parser";
 import { withFileLock } from "../lib/file-lock";
 import type {
   SnapshotDetailResponse,
@@ -105,14 +110,51 @@ transcripts.get("/session/:sessionId", async (c) => {
   }
 });
 
+// ─── DELETE /session/:sessionId ────────────────────────────
+// Permanently delete a session's JSONL file from disk.
+// Body: { confirm: "<first 8 chars of sessionId>" }
+transcripts.delete("/session/:sessionId", async (c) => {
+  try {
+    const sessionId = c.req.param("sessionId");
+    if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
+      return c.json({ error: "Invalid session id" }, 400);
+    }
+
+    const body = await c.req.json<{ confirm?: unknown; projectPath?: unknown }>();
+    const expectedConfirm = sessionId.slice(0, 8);
+    if (typeof body.confirm !== "string" || body.confirm !== expectedConfirm) {
+      return c.json(
+        { error: `Confirmation required: type "${expectedConfirm}" to delete` },
+        400,
+      );
+    }
+
+    const projectPath =
+      typeof body.projectPath === "string" ? body.projectPath : "";
+
+    const filePath = await resolveSessionFilePath(sessionId, projectPath);
+    if (!filePath) {
+      return c.json({ error: "Session JSONL not found" }, 404);
+    }
+
+    await unlink(filePath);
+    return c.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
 // ─── POST /snapshots ───────────────────────────────────────
 // Save an immutable copy of the session's JSONL to disk.
+// Body: { sessionId, projectPath, note?, conversationOnly? }
 transcripts.post("/snapshots", async (c) => {
   try {
     const body = await c.req.json<{
       sessionId?: unknown;
       projectPath?: unknown;
       note?: unknown;
+      conversationOnly?: unknown;
     }>();
 
     if (typeof body.sessionId !== "string" || !body.sessionId) {
@@ -124,6 +166,7 @@ transcripts.post("/snapshots", async (c) => {
 
     const projectPath =
       typeof body.projectPath === "string" ? body.projectPath : "";
+    const conversationOnly = body.conversationOnly === true;
 
     let note = "";
     if (body.note !== undefined) {
@@ -138,36 +181,50 @@ transcripts.post("/snapshots", async (c) => {
       return c.json({ error: "Session JSONL not found" }, 404);
     }
 
+    const rawToStore = conversationOnly
+      ? filterConversationJsonl(result.raw)
+      : result.raw;
+    const transcript = parseTranscriptFromJsonl(rawToStore, body.sessionId, projectPath);
+    const sessionName = extractSessionName(result.raw);
+
     const createdAt = new Date().toISOString();
     const id = buildSnapshotId(body.sessionId, createdAt);
 
     const meta: SnapshotMeta = {
       id,
       sessionId: body.sessionId,
+      sessionName,
       projectPath: result.transcript.projectPath,
       createdAt,
       sessionStartTime: result.transcript.startTime,
-      entryCount: result.transcript.entries.length,
-      userMessageCount: result.transcript.totalUserMessages,
-      assistantMessageCount: result.transcript.totalAssistantMessages,
-      sizeBytes: result.transcript.rawBytes,
+      entryCount: transcript.entries.length,
+      userMessageCount: transcript.totalUserMessages,
+      assistantMessageCount: transcript.totalAssistantMessages,
+      sizeBytes: Buffer.byteLength(rawToStore, "utf-8"),
       note,
+      conversationOnly,
     };
 
     const snapshot: SnapshotFile = {
       schema: 1,
       meta,
-      raw: result.raw,
+      raw: rawToStore,
     };
 
     await ensureSnapshotsDir();
     const filePath = join(PATHS.snapshotsDir, `${id}.json`);
 
     return await withFileLock(filePath, async () => {
+      // Never overwrite an existing snapshot — they are immutable
+      try {
+        await stat(filePath);
+        return c.json({ error: "A snapshot with this ID already exists" }, 409);
+      } catch {
+        // File doesn't exist — proceed
+      }
+
       const tmpPath = `${filePath}.tmp`;
       await writeFile(tmpPath, JSON.stringify(snapshot, null, 2), "utf-8");
-      // Atomic rename via writeFile-then-rename isn't strictly needed here
-      // because the file is new, but keep the .tmp pattern for consistency.
       const { rename } = await import("fs/promises");
       await rename(tmpPath, filePath);
       return c.json({ meta } satisfies { meta: SnapshotMeta });
@@ -207,7 +264,13 @@ transcripts.get("/snapshots", async (c) => {
       const parsed = await readSnapshotFile(filePath);
       if (!parsed) continue;
       if (projectPath && parsed.meta.projectPath !== projectPath) continue;
-      metas.push(parsed.meta);
+      // Backfill fields that may be absent in older snapshot files
+      const meta: SnapshotMeta = {
+        ...parsed.meta,
+        sessionName: parsed.meta.sessionName ?? "",
+        conversationOnly: parsed.meta.conversationOnly ?? false,
+      };
+      metas.push(meta);
     }
 
     metas.sort(
@@ -278,6 +341,159 @@ transcripts.delete("/snapshots/:id", async (c) => {
     }
 
     return c.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
+// ─── GET /snapshots/:id/export ─────────────────────────────
+// Download a snapshot as a portable JSON file for sharing.
+transcripts.get("/snapshots/:id/export", async (c) => {
+  try {
+    const idCheck = validateSnapshotId(c.req.param("id"));
+    if (!idCheck.valid) return c.json({ error: idCheck.error }, 400);
+
+    const filePath = join(PATHS.snapshotsDir, `${idCheck.value}.json`);
+    const parsed = await readSnapshotFile(filePath);
+    if (!parsed) {
+      return c.json({ error: "Snapshot not found" }, 404);
+    }
+
+    const fileName = `snapshot-${parsed.meta.sessionId.slice(0, 8)}-${parsed.meta.createdAt.replace(/[:.]/g, "-")}.json`;
+    c.header("Content-Type", "application/json");
+    c.header("Content-Disposition", `attachment; filename="${fileName}"`);
+    return c.body(JSON.stringify(parsed, null, 2));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
+// ─── POST /snapshots/import ───────────────────────────────
+// Import a snapshot from a portable JSON file.
+transcripts.post("/snapshots/import", async (c) => {
+  try {
+    const body = await c.req.json<unknown>();
+
+    if (!body || typeof body !== "object") {
+      return c.json({ error: "Invalid snapshot file" }, 400);
+    }
+
+    const file = body as Partial<SnapshotFile>;
+    if (!file.meta || typeof file.raw !== "string" || !file.schema) {
+      return c.json({ error: "Invalid snapshot file format" }, 400);
+    }
+    if (!file.meta.sessionId || !file.meta.createdAt) {
+      return c.json({ error: "Snapshot file missing required metadata" }, 400);
+    }
+
+    // Generate a new ID for the imported snapshot to avoid collisions
+    const createdAt = new Date().toISOString();
+    const id = buildSnapshotId(file.meta.sessionId, createdAt);
+
+    const meta: SnapshotMeta = {
+      ...file.meta,
+      id,
+      createdAt,
+      // Preserve original note but prepend import marker
+      note: file.meta.note
+        ? `[imported] ${file.meta.note}`
+        : `[imported] originally from ${new Date(file.meta.createdAt).toLocaleString()}`,
+      // Backfill fields that may be absent in older exports
+      sessionName: file.meta.sessionName ?? "",
+      conversationOnly: file.meta.conversationOnly ?? false,
+    };
+
+    const snapshot: SnapshotFile = {
+      schema: 1,
+      meta,
+      raw: file.raw,
+    };
+
+    await ensureSnapshotsDir();
+    const filePath = join(PATHS.snapshotsDir, `${id}.json`);
+
+    return await withFileLock(filePath, async () => {
+      // Never overwrite — snapshots are immutable
+      try {
+        await stat(filePath);
+        return c.json({ error: "A snapshot with this ID already exists" }, 409);
+      } catch {
+        // File doesn't exist — proceed
+      }
+
+      const tmpPath = `${filePath}.tmp`;
+      await writeFile(tmpPath, JSON.stringify(snapshot, null, 2), "utf-8");
+      const { rename } = await import("fs/promises");
+      await rename(tmpPath, filePath);
+      return c.json({ meta } satisfies { meta: SnapshotMeta });
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
+// ─── POST /snapshots/:id/spawn ────────────────────────────
+// Create a brand-new session (new UUID) seeded with the snapshot's JSONL,
+// so `claude --resume <newId>` starts a fresh session with all the context.
+// Only works with full snapshots — conversation-only snapshots lack the
+// system/progress/file-history entries Claude Code needs to resume properly.
+transcripts.post("/snapshots/:id/spawn", async (c) => {
+  try {
+    const idCheck = validateSnapshotId(c.req.param("id"));
+    if (!idCheck.valid) return c.json({ error: idCheck.error }, 400);
+
+    const filePath = join(PATHS.snapshotsDir, `${idCheck.value}.json`);
+    const parsed = await readSnapshotFile(filePath);
+    if (!parsed) {
+      return c.json({ error: "Snapshot not found" }, 404);
+    }
+
+    if (parsed.meta.conversationOnly) {
+      return c.json(
+        {
+          error:
+            "Cannot spawn from a conversation-only snapshot. It lacks the system entries Claude Code needs to resume. Save a full snapshot first.",
+        },
+        400,
+      );
+    }
+
+    const { randomUUID } = await import("crypto");
+    const newSessionId = randomUUID();
+
+    // Rewrite sessionId fields inside the JSONL so the session scanner
+    // picks up the new ID instead of the original one.
+    const rewrittenRaw = parsed.raw
+      .split("\n")
+      .map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return line;
+        try {
+          const entry = JSON.parse(trimmed);
+          if (entry.sessionId) {
+            entry.sessionId = newSessionId;
+          }
+          return JSON.stringify(entry);
+        } catch {
+          return line;
+        }
+      })
+      .join("\n");
+
+    const { projectPath } = parsed.meta;
+    const sessionsDir = getProjectSessionsDir(projectPath);
+    await mkdir(sessionsDir, { recursive: true });
+
+    const sessionFile = join(sessionsDir, `${newSessionId}.jsonl`);
+    await writeFile(sessionFile, rewrittenRaw, "utf-8");
+
+    return c.json({
+      sessionId: newSessionId,
+      command: `claude --resume ${newSessionId}`,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ error: message }, 500);

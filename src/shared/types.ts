@@ -343,6 +343,7 @@ export type TranscriptResponse = {
 export type SnapshotMeta = {
   id: string;                // filename stem
   sessionId: string;
+  sessionName: string;       // from custom-title JSONL entry (may be empty)
   projectPath: string;
   createdAt: string;          // ISO timestamp snapshot was created
   sessionStartTime: string;
@@ -351,6 +352,7 @@ export type SnapshotMeta = {
   assistantMessageCount: number;
   sizeBytes: number;
   note: string;
+  conversationOnly: boolean;  // true if saved with conversation-only filter
 };
 
 export type SnapshotListResponse = {

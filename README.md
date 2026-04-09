@@ -92,6 +92,19 @@ This dashboard lets you:
 - Configurable message limits for your own tracking (not connected to Anthropic's limits)
 - Warning thresholds at 80% and 100% of configured limits
 
+### Transcripts (`#/transcripts`)
+
+- **Session viewer:** Browse any session's full conversation — every user prompt, assistant reply, tool call, and tool result
+- **Filter modes:** All (raw), Conversation (user-facing only), User only, Assistant only
+- **Order toggle:** Oldest first / Newest first
+- **Session header:** Shows session name, full session ID, and `claude --resume` command
+- **Snapshots:** Save immutable copies of session transcripts that survive compaction, rotation, or deletion
+  - **Save Full:** Archives the complete raw JSONL
+  - **Save Conversation Only:** Archives only user prompts and assistant text responses (no tool calls/results)
+  - Snapshots are never overwritten — each save creates a new independent copy
+- **Export / Import:** Download snapshots as portable `.json` files, share with colleagues, import on another machine
+- **Spawn Session:** Creates a new Claude Code session (new UUID) seeded with a snapshot's conversation context — run `claude --resume <newId>` to continue from where the snapshot left off
+
 ### How It Works (`#/how-it-works`)
 
 - Interactive guide with beginner/advanced toggle
@@ -118,7 +131,8 @@ claude-dashboard/
 │   │   │   ├── sessions.ts        # Session history from session-meta
 │   │   │   ├── defaults.ts        # Default MCP state for new projects
 │   │   │   ├── analytics.ts       # Per-session and per-project analytics
-│   │   │   └── usage.ts           # Rolling-window usage tracking
+│   │   │   ├── usage.ts           # Rolling-window usage tracking
+│   │   │   └── transcripts.ts     # Transcript viewer, snapshots, export/import, spawn
 │   │   └── lib/
 │   │       ├── paths.ts           # All Claude config file paths + scope helpers
 │   │       ├── file-io.ts         # Safe JSON read/write with atomic writes + backups
@@ -134,6 +148,7 @@ claude-dashboard/
 │   │       ├── pricing.ts         # Model pricing data for cost estimates
 │   │       ├── insights.ts        # Generate health insights from session data
 │   │       ├── jsonl-parser.ts    # Parse session JSONL for detailed analytics
+│   │       ├── transcript-parser.ts # Parse JSONL into readable transcripts
 │   │       ├── session-scanner.ts # Read session-meta files with caching
 │   │       └── types.ts           # Server-side type definitions
 │   ├── client/                    # React 19 + Tailwind v4 (port 5175)
@@ -150,6 +165,7 @@ claude-dashboard/
 │   │       ├── hooks-manager/     # HookEventCard, AddHookForm
 │   │       ├── profiles/          # ProfileCard, ProfileEditor, SaveCurrentForm
 │   │       ├── usage/             # UsagePage, windowed usage display
+│   │       ├── transcripts/       # TranscriptsPage, SessionPicker, SnapshotPicker, TranscriptView
 │   │       ├── how-it-works/      # Interactive guide with diagrams
 │   │       ├── projects/          # ProjectSelector
 │   │       ├── shared/            # Toggle, Badge, Toast, ScopeBanner
@@ -178,6 +194,7 @@ The dashboard reads and writes these Claude Code configuration files:
 | `~/.claude/profiles/*.json` | Global | R/W | Configuration profiles (plugins, skills, hooks, MCP) |
 | `~/.claude/usage-data/session-meta/*.json` | Global | R | Per-session cost/token/tool data |
 | `~/.claude/dashboard-config.json` | Dashboard | R/W | MCP defaults, plan limits |
+| `~/.claude/dashboard-snapshots/*.json` | Dashboard | R/W | Immutable transcript snapshots |
 | `<project>/.claude/settings.json` | Project | R/W | Project-level plugin/skill/hook overrides |
 | `<project>/.claude/settings.local.json` | Project local | R/W | Project permissions, MCP toggles |
 | `<project>/.mcp.json` | Project | R/W | Project-specific MCP servers |
@@ -339,5 +356,13 @@ All endpoints are at `http://localhost:3847/api/`. Most accept an optional `?pro
 | GET | `/defaults` | Read MCP defaults config |
 | PUT | `/defaults/disabled-mcps` | Set default disabled MCPs |
 | POST | `/defaults/apply` | Apply defaults to a project |
+| GET | `/transcripts/session/:id` | Full readable transcript for a live session |
+| POST | `/transcripts/snapshots` | Save snapshot `{ sessionId, projectPath, note?, conversationOnly? }` |
+| GET | `/transcripts/snapshots` | List all snapshots (optionally scoped to project) |
+| GET | `/transcripts/snapshots/:id` | Load snapshot transcript |
+| DELETE | `/transcripts/snapshots/:id` | Delete a snapshot |
+| GET | `/transcripts/snapshots/:id/export` | Download snapshot as portable JSON |
+| POST | `/transcripts/snapshots/import` | Import a snapshot from JSON |
+| POST | `/transcripts/snapshots/:id/spawn` | Create new session from snapshot |
 
 </details>

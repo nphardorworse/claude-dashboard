@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   SessionMeta,
   SessionsResponse,
@@ -22,7 +22,7 @@ import { GlobeIcon, FolderIcon, XIcon } from "../shared/NavIcons";
 import { SessionPicker } from "./SessionPicker";
 import { TranscriptView } from "./TranscriptView";
 import type { TranscriptFilter, TranscriptOrder } from "./TranscriptView";
-import { SnapshotsList } from "./SnapshotsList";
+import { SnapshotPicker } from "./SnapshotPicker";
 
 type TranscriptsPageProps = {
   projectPath?: string | null;
@@ -84,11 +84,12 @@ const saveSnapshot = async (
   sessionId: string,
   projectPath: string,
   note: string,
+  conversationOnly: boolean,
 ): Promise<SnapshotMeta> => {
   const res = await apiFetch("/api/transcripts/snapshots", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, projectPath, note }),
+    body: JSON.stringify({ sessionId, projectPath, note, conversationOnly }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -107,6 +108,58 @@ const deleteSnapshot = async (snapshotId: string): Promise<void> => {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `HTTP ${res.status}`);
   }
+};
+
+const deleteSession = async (
+  sessionId: string,
+  projectPath: string,
+  confirm: string,
+): Promise<void> => {
+  const res = await apiFetch(
+    `/api/transcripts/session/${encodeURIComponent(sessionId)}`,
+    {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm, projectPath }),
+    },
+  );
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+};
+
+const importSnapshot = async (file: File): Promise<SnapshotMeta> => {
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+  const res = await apiFetch("/api/transcripts/snapshots/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(parsed),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { meta: SnapshotMeta };
+  return data.meta;
+};
+
+type SpawnResult = {
+  sessionId: string;
+  command: string;
+};
+
+const spawnSession = async (snapshotId: string): Promise<SpawnResult> => {
+  const res = await apiFetch(
+    `/api/transcripts/snapshots/${encodeURIComponent(snapshotId)}/spawn`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<SpawnResult>;
 };
 
 // ─── Scope banner ──────────────────────────────────────────
@@ -186,6 +239,12 @@ export const TranscriptsPage = ({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
+  // Session delete confirmation (UI commented out — untested)
+  const [_showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
+  const [_isDeleting, setIsDeleting] = useState(false);
+  const [_deleteError, setDeleteError] = useState<string | null>(null);
+
   // Snapshots tab
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
   const [snapshotsLoading, setSnapshotsLoading] = useState(true);
@@ -199,6 +258,10 @@ export const TranscriptsPage = ({
   const [snapshotDetailError, setSnapshotDetailError] = useState<string | null>(
     null,
   );
+
+  // Import file input ref
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   // ── Load sessions on scope change ──
 
@@ -329,28 +392,60 @@ export const TranscriptsPage = ({
 
   // ── Snapshot save handler ──
 
-  const handleSaveSnapshot = useCallback(async () => {
+  const handleSaveSnapshot = useCallback(
+    async (conversationOnly: boolean) => {
+      if (!selectedSession) return;
+      setIsSaving(true);
+      setSaveError(null);
+      setSaveMessage(null);
+      try {
+        await saveSnapshot(
+          selectedSession.sessionId,
+          selectedSession.projectPath,
+          snapshotNote.trim(),
+          conversationOnly,
+        );
+        setSnapshotNote("");
+        setSaveMessage(
+          conversationOnly ? "Conversation-only snapshot saved." : "Snapshot saved.",
+        );
+        await loadSnapshots();
+        window.setTimeout(() => setSaveMessage(null), 3000);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [loadSnapshots, selectedSession, snapshotNote],
+  );
+
+  // ── Session delete handler ──
+
+  const _handleDeleteSession = useCallback(async () => {
     if (!selectedSession) return;
-    setIsSaving(true);
-    setSaveError(null);
-    setSaveMessage(null);
+    const expected = selectedSession.sessionId.slice(0, 8);
+    if (deleteConfirmInput !== expected) return;
+
+    setIsDeleting(true);
+    setDeleteError(null);
     try {
-      await saveSnapshot(
+      await deleteSession(
         selectedSession.sessionId,
         selectedSession.projectPath,
-        snapshotNote.trim(),
+        deleteConfirmInput,
       );
-      setSnapshotNote("");
-      setSaveMessage("Snapshot saved.");
-      await loadSnapshots();
-      // Clear success message after a few seconds
-      window.setTimeout(() => setSaveMessage(null), 3000);
+      setSelectedSession(null);
+      setTranscript(null);
+      setShowDeleteConfirm(false);
+      setDeleteConfirmInput("");
+      await loadSessions();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Unknown error");
+      setDeleteError(err instanceof Error ? err.message : "Unknown error");
     } finally {
-      setIsSaving(false);
+      setIsDeleting(false);
     }
-  }, [loadSnapshots, selectedSession, snapshotNote]);
+  }, [selectedSession, deleteConfirmInput, loadSessions]);
 
   // ── Snapshot delete handler ──
 
@@ -371,6 +466,91 @@ export const TranscriptsPage = ({
     },
     [loadSnapshots, selectedSnapshot],
   );
+
+  // ── Export handler ──
+
+  const handleExportSnapshot = useCallback(async () => {
+    if (!selectedSnapshot) return;
+    try {
+      const res = await fetch(
+        `/api/transcripts/snapshots/${encodeURIComponent(selectedSnapshot.id)}/export`,
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `snapshot-${selectedSnapshot.sessionId.slice(0, 8)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setSnapshotsError(
+        err instanceof Error ? err.message : "Failed to export snapshot",
+      );
+    }
+  }, [selectedSnapshot]);
+
+  // ── Import handler ──
+
+  const handleImportFile = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setIsImporting(true);
+      setSnapshotsError(null);
+      try {
+        await importSnapshot(file);
+        await loadSnapshots();
+      } catch (err) {
+        setSnapshotsError(
+          err instanceof Error ? err.message : "Failed to import snapshot",
+        );
+      } finally {
+        setIsImporting(false);
+        // Reset file input so the same file can be re-selected
+        if (importInputRef.current) importInputRef.current.value = "";
+      }
+    },
+    [loadSnapshots],
+  );
+
+  // ── Spawn handler — creates a new session from snapshot JSONL ──
+
+  const [spawnMessage, setSpawnMessage] = useState<string | null>(null);
+
+  const handleSpawnSession = useCallback(async () => {
+    if (!selectedSnapshot) return;
+    setSpawnMessage(null);
+    setSnapshotsError(null);
+    try {
+      const result = await spawnSession(selectedSnapshot.id);
+      setSpawnMessage(result.command);
+    } catch (err) {
+      setSnapshotsError(
+        err instanceof Error ? err.message : "Failed to spawn session",
+      );
+    }
+  }, [selectedSnapshot]);
+
+  // ── Copy conversation as readable text ──
+
+  const handleCopyContext = useCallback(() => {
+    if (!snapshotTranscript) return;
+    const lines: string[] = [];
+    for (const entry of snapshotTranscript.entries) {
+      if (entry.role === "user" && entry.text.trim()) {
+        lines.push(`[User]\n${entry.text.trim()}`);
+      } else if (entry.role === "assistant" && entry.text.trim()) {
+        lines.push(`[Assistant]\n${entry.text.trim()}`);
+      } else if (entry.role === "summary" && entry.text.trim()) {
+        lines.push(`[Summary]\n${entry.text.trim()}`);
+      }
+    }
+    const text = lines.join("\n\n---\n\n");
+    navigator.clipboard.writeText(text);
+  }, [snapshotTranscript]);
 
   const handleTabChange = useCallback((value: string) => {
     setTab(value as TranscriptTab);
@@ -409,6 +589,8 @@ export const TranscriptsPage = ({
               Snapshots {snapshots.length > 0 ? `(${snapshots.length})` : ""}
             </TabsTrigger>
           </TabsList>
+
+          {/* ─── Sessions tab ─── */}
 
           <TabsContent value="live">
             {sessionsLoading && (
@@ -449,7 +631,7 @@ export const TranscriptsPage = ({
                 <div className="flex min-w-0 flex-col gap-3">
                   {selectedSession && (
                     <>
-                      {/* Session header — shows session ID for `claude --resume` */}
+                      {/* Session header */}
                       <Card>
                         <CardContent className="p-4">
                           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -468,6 +650,63 @@ export const TranscriptsPage = ({
                               Resume: <code className="font-mono text-zinc-400">claude --resume {selectedSession.sessionId}</code>
                             </span>
                           </div>
+                          {/* TODO: Session delete — disabled until tested
+                          <div className="mt-2">
+                            {!showDeleteConfirm ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowDeleteConfirm(true);
+                                  setDeleteConfirmInput("");
+                                  setDeleteError(null);
+                                }}
+                                className="text-[10px] text-red-400/60 hover:text-red-300 transition-snappy"
+                              >
+                                Delete session
+                              </button>
+                            ) : (
+                              <div className="flex flex-wrap items-center gap-2 rounded-md bg-red-500/5 px-3 py-2 ring-1 ring-red-500/20">
+                                <span className="text-[11px] text-red-300">
+                                  This permanently deletes the JSONL file. Type{" "}
+                                  <code className="font-mono font-semibold">{selectedSession.sessionId.slice(0, 8)}</code>{" "}
+                                  to confirm:
+                                </span>
+                                <Input
+                                  type="text"
+                                  value={deleteConfirmInput}
+                                  onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                                  placeholder={selectedSession.sessionId.slice(0, 8)}
+                                  className="w-28 font-mono text-xs"
+                                />
+                                <Button
+                                  variant="destructive"
+                                  size="xs"
+                                  onClick={handleDeleteSession}
+                                  disabled={
+                                    isDeleting ||
+                                    deleteConfirmInput !== selectedSession.sessionId.slice(0, 8)
+                                  }
+                                >
+                                  {isDeleting ? "Deleting…" : "Delete"}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="xs"
+                                  onClick={() => {
+                                    setShowDeleteConfirm(false);
+                                    setDeleteConfirmInput("");
+                                    setDeleteError(null);
+                                  }}
+                                >
+                                  Cancel
+                                </Button>
+                                {deleteError && (
+                                  <p className="w-full text-xs text-red-400">{deleteError}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          */}
                         </CardContent>
                       </Card>
 
@@ -480,16 +719,11 @@ export const TranscriptsPage = ({
                                 Save snapshot
                               </p>
                               <p className="mt-1 text-xs text-zinc-400">
-                                Archives the current JSONL content so it survives
+                                Archives the session content so it survives
                                 compaction or rotation.
-                                {filter !== "all" && (
-                                  <span className="ml-1 text-blue-400">
-                                    (full raw data is always preserved; filter is saved as default view)
-                                  </span>
-                                )}
                               </p>
                             </div>
-                            <div className="flex flex-1 items-center gap-2 min-w-[240px]">
+                            <div className="flex flex-1 flex-wrap items-center gap-2 min-w-[240px]">
                               <Input
                                 type="text"
                                 value={snapshotNote}
@@ -502,10 +736,19 @@ export const TranscriptsPage = ({
                               <Button
                                 variant="default"
                                 size="sm"
-                                onClick={handleSaveSnapshot}
+                                onClick={() => handleSaveSnapshot(false)}
                                 disabled={isSaving || !transcript}
                               >
-                                {isSaving ? "Saving…" : "Save Snapshot"}
+                                {isSaving ? "Saving…" : "Save Full"}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleSaveSnapshot(true)}
+                                disabled={isSaving || !transcript}
+                                title="Save only user prompts and assistant text responses (no tool calls/results)"
+                              >
+                                {isSaving ? "Saving…" : "Save Conversation Only"}
                               </Button>
                             </div>
                           </div>
@@ -561,43 +804,159 @@ export const TranscriptsPage = ({
             )}
           </TabsContent>
 
+          {/* ─── Snapshots tab ─── */}
+
           <TabsContent value="snapshots">
-            <div className="flex flex-col gap-4">
-              <SnapshotsList
-                snapshots={snapshots}
-                selectedSnapshotId={selectedSnapshot?.id ?? null}
-                onSelect={setSelectedSnapshot}
-                onDelete={handleDeleteSnapshot}
-                isLoading={snapshotsLoading}
-                error={snapshotsError}
-              />
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr]">
+              <div className="h-[72vh] min-h-[400px]">
+                <SnapshotPicker
+                  snapshots={snapshots}
+                  selectedSnapshotId={selectedSnapshot?.id ?? null}
+                  onSelect={setSelectedSnapshot}
+                  onDelete={handleDeleteSnapshot}
+                  isLoading={snapshotsLoading}
+                  error={snapshotsError}
+                />
+              </div>
 
-              {snapshotDetailLoading && (
-                <div className="flex items-center gap-2 py-8 text-zinc-400">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-500" />
-                  <span className="text-sm">Loading snapshot…</span>
-                </div>
-              )}
-
-              {snapshotDetailError && (
-                <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3">
-                  <p className="text-sm text-red-400">
-                    Failed to load snapshot: {snapshotDetailError}
-                  </p>
-                </div>
-              )}
-
-              {!snapshotDetailLoading &&
-                !snapshotDetailError &&
-                snapshotTranscript && (
-                  <TranscriptView
-                    transcript={snapshotTranscript}
-                    filter={filter}
-                    onFilterChange={setFilter}
-                    order={order}
-                    onOrderChange={setOrder}
-                  />
+              <div className="flex min-w-0 flex-col gap-3">
+                {selectedSnapshot && (
+                  <>
+                    {/* Snapshot header — mirrors the session header */}
+                    <Card>
+                      <CardContent className="p-4">
+                        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                          {selectedSnapshot.sessionName && (
+                            <span className="text-sm font-semibold text-zinc-100">
+                              {selectedSnapshot.sessionName}
+                            </span>
+                          )}
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                            Session ID
+                          </span>
+                          <code className="select-all rounded bg-[var(--overlay-subtle)] px-2 py-0.5 font-mono text-xs text-zinc-200">
+                            {selectedSnapshot.sessionId}
+                          </code>
+                          <span className="text-[10px] text-zinc-500">
+                            Resume: <code className="font-mono text-zinc-400">claude --resume {selectedSnapshot.sessionId}</code>
+                          </span>
+                          {selectedSnapshot.conversationOnly && (
+                            <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400 ring-1 ring-amber-500/20">
+                              conversation only
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <Button variant="outline" size="xs" onClick={handleExportSnapshot}>
+                            Export
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={handleSpawnSession}
+                            disabled={selectedSnapshot.conversationOnly}
+                            title={
+                              selectedSnapshot.conversationOnly
+                                ? "Cannot spawn from a conversation-only snapshot — save a full snapshot first"
+                                : "Create a new session seeded with this snapshot's conversation"
+                            }
+                          >
+                            Spawn Session
+                          </Button>
+                          <Button variant="outline" size="xs" onClick={handleCopyContext} disabled={!snapshotTranscript}>
+                            Copy as Text
+                          </Button>
+                          <input
+                            ref={importInputRef}
+                            type="file"
+                            accept=".json"
+                            onChange={handleImportFile}
+                            className="hidden"
+                          />
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={() => importInputRef.current?.click()}
+                            disabled={isImporting}
+                          >
+                            {isImporting ? "Importing…" : "Import"}
+                          </Button>
+                          {selectedSnapshot.note && (
+                            <span className="ml-1 text-xs text-zinc-400">
+                              {selectedSnapshot.note}
+                            </span>
+                          )}
+                        </div>
+                        {spawnMessage && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <code className="select-all rounded bg-[var(--overlay-subtle)] px-2 py-1 font-mono text-xs text-green-400">
+                              {spawnMessage}
+                            </code>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </>
                 )}
+
+                {snapshotDetailLoading && (
+                  <div className="flex items-center gap-2 py-8 text-zinc-400">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-500" />
+                    <span className="text-sm">Loading snapshot…</span>
+                  </div>
+                )}
+
+                {snapshotDetailError && (
+                  <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3">
+                    <p className="text-sm text-red-400">
+                      Failed to load snapshot: {snapshotDetailError}
+                    </p>
+                  </div>
+                )}
+
+                {!snapshotDetailLoading &&
+                  !snapshotDetailError &&
+                  snapshotTranscript && (
+                    <TranscriptView
+                      transcript={snapshotTranscript}
+                      filter={filter}
+                      onFilterChange={setFilter}
+                      order={order}
+                      onOrderChange={setOrder}
+                    />
+                  )}
+
+                {!selectedSnapshot && (
+                  <Card>
+                    <CardContent className="p-5">
+                      <div className="flex flex-col gap-3">
+                        <p className="text-xs text-zinc-500">
+                          {snapshots.length === 0
+                            ? "No snapshots saved yet. Open a session and click \"Save Full\" or \"Save Conversation Only\" to archive its transcript."
+                            : "Select a snapshot from the list to view its transcript."}
+                        </p>
+                        <div>
+                          <input
+                            ref={importInputRef}
+                            type="file"
+                            accept=".json"
+                            onChange={handleImportFile}
+                            className="hidden"
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => importInputRef.current?.click()}
+                            disabled={isImporting}
+                          >
+                            {isImporting ? "Importing…" : "Import Snapshot"}
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
             </div>
           </TabsContent>
         </Tabs>
