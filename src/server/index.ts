@@ -45,14 +45,30 @@ app.route("/api/transcripts", transcripts);
 const PORT = 3847;
 
 const start = async () => {
-  const token = await initToken();
+  await initToken();
 
-  serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" }, () => {
-    console.info(
-      `Claude Code Dashboard server running on http://localhost:${PORT}`,
-    );
-    console.info("Auth token: see ~/.claude/dashboard-token");
-    console.info(`Token file: ~/.claude/dashboard-token`);
+  const server = serve(
+    { fetch: app.fetch, port: PORT, hostname: "127.0.0.1" },
+    () => {
+      console.info(
+        `Claude Code Dashboard server running on http://localhost:${PORT}`,
+      );
+      console.info("Auth token: see ~/.claude/dashboard-token");
+      console.info(`Token file: ~/.claude/dashboard-token`);
+    },
+  );
+
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `\n✗ Port ${PORT} is already in use — another dashboard server is likely still running.\n` +
+          `  Stop it, then re-run \`npm run dev\`:\n` +
+          `      lsof -ti:${PORT} | xargs kill\n`,
+      );
+    } else {
+      console.error("Dashboard server failed to start:", err);
+    }
+    process.exit(1);
   });
 };
 
