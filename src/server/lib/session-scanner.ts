@@ -482,13 +482,12 @@ const enrichMetaSessionCosts = async (
 const ALL_SESSIONS_CACHE_TTL_MS = 15_000;
 let cachedAllSessions: SessionMeta[] | null = null;
 let allSessionsCacheTimestamp = 0;
+// Coalesces concurrent refreshes — the first full scan after a cache miss
+// serves every caller that arrives while it's in flight (prevents the
+// startup "stampede" where parallel /usage requests each rescan all JSONL).
+let inFlightScan: Promise<SessionMeta[]> | null = null;
 
-export const getAllSessions = async (): Promise<SessionMeta[]> => {
-  const now = Date.now();
-  if (cachedAllSessions && now - allSessionsCacheTimestamp < ALL_SESSIONS_CACHE_TTL_MS) {
-    return cachedAllSessions;
-  }
-
+const scanAllSessions = async (): Promise<SessionMeta[]> => {
   // Start with pre-generated meta files — clone to avoid mutating the cache
   const metaSessions = (await loadMetaSessions()).map((s) => ({ ...s }));
   const metaIds = new Set(metaSessions.map((s) => s.sessionId));
@@ -512,6 +511,20 @@ export const getAllSessions = async (): Promise<SessionMeta[]> => {
   allSessionsCacheTimestamp = Date.now();
 
   return merged;
+};
+
+export const getAllSessions = async (): Promise<SessionMeta[]> => {
+  const now = Date.now();
+  if (cachedAllSessions && now - allSessionsCacheTimestamp < ALL_SESSIONS_CACHE_TTL_MS) {
+    return cachedAllSessions;
+  }
+
+  if (inFlightScan) return inFlightScan;
+
+  inFlightScan = scanAllSessions().finally(() => {
+    inFlightScan = null;
+  });
+  return inFlightScan;
 };
 
 export const getSessionsForProject = async (

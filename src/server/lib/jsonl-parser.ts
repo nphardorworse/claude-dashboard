@@ -1,4 +1,4 @@
-import { readFile } from "fs/promises";
+import { readFile, stat } from "fs/promises";
 import { resolveSessionFilePath } from "./paths";
 import { calculateTurnCost, calculateCostBreakdown } from "./pricing";
 import type { TurnUsage, SessionAnalysis } from "../../shared/types";
@@ -26,6 +26,102 @@ type WindowedUsage = {
 };
 
 /**
+ * Compact, per-entry distillation of a session JSONL — just the fields
+ * needed to compute windowed usage. Parsing the (often huge, often dormant)
+ * transcript is the expensive step; once distilled it's replayed cheaply
+ * against any cutoff. `kind`: 0 = countable user prompt, 1 = assistant.
+ */
+type CompactEntry = {
+  ts: number;
+  kind: 0 | 1;
+  model: string;
+  hasUsage: boolean;
+  input: number;
+  output: number;
+  cacheCreate: number;
+  cacheRead: number;
+};
+
+type ParsedFileCache = { entries: CompactEntry[]; mtimeMs: number; size: number };
+
+// Keyed by absolute file path; invalidated by mtime+size. Only holds files
+// that actually span a window boundary (a handful), so memory stays small.
+const fileEntryCache = new Map<string, ParsedFileCache>();
+
+/**
+ * Parse a session JSONL into compact entries, memoized by mtime+size.
+ * Returns null if the file is missing/unreadable.
+ */
+const getCompactEntries = async (filePath: string): Promise<CompactEntry[] | null> => {
+  let fileStat;
+  try {
+    fileStat = await stat(filePath);
+  } catch {
+    return null;
+  }
+
+  const cached = fileEntryCache.get(filePath);
+  if (cached && cached.mtimeMs === fileStat.mtimeMs && cached.size === fileStat.size) {
+    return cached.entries;
+  }
+
+  let raw: string;
+  try {
+    raw = await readFile(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+
+  const entries: CompactEntry[] = [];
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    let entry: {
+      type?: string;
+      timestamp?: string;
+      message?: { model?: string; content?: unknown; usage?: UsageBlock };
+    };
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+
+    // Match the original semantics exactly: missing timestamp → 0 (always
+    // before cutoff), malformed → NaN (NaN < cutoff is false → counted).
+    const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : 0;
+
+    if (entry.type === "user") {
+      // Skip tool_result entries — only count real user prompts
+      if (!isToolResultContent(entry.message?.content)) {
+        entries.push({ ts, kind: 0, model: "", hasUsage: false, input: 0, output: 0, cacheCreate: 0, cacheRead: 0 });
+      }
+      continue;
+    }
+
+    if (entry.type === "assistant") {
+      const model = entry.message?.model ?? "";
+      const usage = entry.message?.usage;
+      if (!model && !usage) continue; // contributes nothing to any cutoff
+      entries.push({
+        ts,
+        kind: 1,
+        model,
+        hasUsage: !!usage,
+        input: usage?.input_tokens ?? 0,
+        output: usage?.output_tokens ?? 0,
+        cacheCreate: usage?.cache_creation_input_tokens ?? 0,
+        cacheRead: usage?.cache_read_input_tokens ?? 0,
+      });
+    }
+  }
+
+  fileEntryCache.set(filePath, { entries, mtimeMs: fileStat.mtimeMs, size: fileStat.size });
+  return entries;
+};
+
+/**
  * Scan a session's JSONL and sum usage for entries after the cutoff.
  *
  * `messages` = user turns (prompts) after the cutoff. Tool-result entries
@@ -33,6 +129,10 @@ type WindowedUsage = {
  * tracks in /usage.
  *
  * Token totals come from ALL assistant entries after the cutoff.
+ *
+ * The transcript parse is memoized by mtime+size (see {@link getCompactEntries}),
+ * so the per-request cost is just replaying the compact entries against the
+ * moving cutoff — dormant files become essentially free after first read.
  */
 export const sumUsageAfterCutoff = async (
   sessionId: string,
@@ -43,12 +143,8 @@ export const sumUsageAfterCutoff = async (
   const filePath = await resolveSessionFilePath(sessionId, projectPath);
   if (!filePath) return empty;
 
-  let raw: string;
-  try {
-    raw = await readFile(filePath, "utf-8");
-  } catch {
-    return empty;
-  }
+  const entries = await getCompactEntries(filePath);
+  if (!entries) return empty;
 
   let messages = 0;
   let inputTokens = 0;
@@ -57,45 +153,21 @@ export const sumUsageAfterCutoff = async (
   let cacheReadTokens = 0;
   let lastModel = "";
 
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+  for (const e of entries) {
+    if (e.ts < cutoffMs) continue;
 
-    let entry: {
-      type?: string;
-      timestamp?: string;
-      message?: {
-        model?: string;
-        content?: unknown;
-        usage?: UsageBlock;
-      };
-    };
-    try {
-      entry = JSON.parse(trimmed);
-    } catch {
+    if (e.kind === 0) {
+      messages += 1;
       continue;
     }
 
-    const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : 0;
-    if (ts < cutoffMs) continue;
-
-    if (entry.type === "user") {
-      // Skip tool_result entries — only count real user prompts
-      if (!isToolResultContent(entry.message?.content)) {
-        messages += 1;
-      }
-      continue;
-    }
-
-    if (entry.type === "assistant") {
-      if (entry.message?.model) lastModel = entry.message.model;
-      const usage = entry.message?.usage;
-      if (!usage) continue;
-
-      inputTokens += usage.input_tokens ?? 0;
-      outputTokens += usage.output_tokens ?? 0;
-      cacheCreationTokens += usage.cache_creation_input_tokens ?? 0;
-      cacheReadTokens += usage.cache_read_input_tokens ?? 0;
+    // assistant
+    if (e.model) lastModel = e.model;
+    if (e.hasUsage) {
+      inputTokens += e.input;
+      outputTokens += e.output;
+      cacheCreationTokens += e.cacheCreate;
+      cacheReadTokens += e.cacheRead;
     }
   }
 
