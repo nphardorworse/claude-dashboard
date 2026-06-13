@@ -15,6 +15,7 @@ import { analytics } from "./routes/analytics";
 import { usage } from "./routes/usage";
 import { transcripts } from "./routes/transcripts";
 import { initToken, getToken, authMiddleware } from "./lib/auth";
+import { getAllSessions } from "./lib/session-scanner";
 
 const app = new Hono();
 
@@ -55,6 +56,21 @@ const start = async () => {
       );
       console.info("Auth token: see ~/.claude/dashboard-token");
       console.info(`Token file: ~/.claude/dashboard-token`);
+
+      // Prewarm the session cache so the first /usage request doesn't pay the
+      // full cold scan of all transcripts (~5s on large histories). Fire-and-
+      // forget — the server already accepts connections; any request arriving
+      // mid-scan coalesces onto this one via getAllSessions' in-flight guard.
+      const prewarmStart = performance.now();
+      getAllSessions()
+        .then((s) =>
+          console.info(
+            `Prewarmed session cache: ${s.length} sessions in ${Math.round(performance.now() - prewarmStart)}ms`,
+          ),
+        )
+        .catch((err) =>
+          console.warn("Session cache prewarm failed (will lazy-load on first request):", err),
+        );
     },
   );
 
