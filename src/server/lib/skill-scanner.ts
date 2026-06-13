@@ -231,12 +231,21 @@ export const scanSkills = async (
     projectPath ? discoverProjectSkills(projectPath) : Promise.resolve([]),
   ]);
 
-  const seen = new Set<string>();
+  // Dedup on two axes:
+  // - resolvedPath: the same real SKILL.md reached via different symlinks.
+  // - id: the same skill id from two installs (e.g. a plugin installed from
+  //   two marketplaces — expo@expo-plugins and expo@claude-plugins-official —
+  //   both collapse to pluginName "expo", so they share `expo:<skill>` ids
+  //   at different paths). The id is the toggle key and the React list key,
+  //   so duplicates must collapse to one entry. First occurrence wins.
+  const seenPaths = new Set<string>();
+  const seenIds = new Set<string>();
   const allDiscovered: DiscoveredSkill[] = [];
 
   for (const skill of [...userSkills, ...projectSkills, ...pluginSkills]) {
-    if (seen.has(skill.resolvedPath)) continue;
-    seen.add(skill.resolvedPath);
+    if (seenPaths.has(skill.resolvedPath) || seenIds.has(skill.id)) continue;
+    seenPaths.add(skill.resolvedPath);
+    seenIds.add(skill.id);
     allDiscovered.push(skill);
   }
 
