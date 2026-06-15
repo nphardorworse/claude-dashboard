@@ -38,6 +38,8 @@ const MAX_MCP_NAME_LENGTH = 100;
 const MAX_COMMAND_LENGTH = 500;
 const MAX_ARGS_COUNT = 20;
 const MAX_ARG_LENGTH = 500;
+const MAX_URL_LENGTH = 2000;
+const MCP_URL_RE = /^https?:\/\/.+/;
 const MAX_ENV_ENTRIES = 50;
 const ENV_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const MAX_ENV_VALUE_LENGTH = 1000;
@@ -71,6 +73,25 @@ export const validateMcpCommand = (
     return { valid: false, error: "Command contains invalid control characters" };
   }
   return { valid: true, value: command.trim() };
+};
+
+export const validateMcpUrl = (
+  url: unknown
+): { valid: true; value: string } | { valid: false; error: string } => {
+  if (typeof url !== "string" || !url.trim()) {
+    return { valid: false, error: "URL is required" };
+  }
+  const trimmed = url.trim();
+  if (trimmed.length > MAX_URL_LENGTH) {
+    return { valid: false, error: `URL too long (max ${MAX_URL_LENGTH} chars)` };
+  }
+  if (!MCP_URL_RE.test(trimmed)) {
+    return { valid: false, error: "URL must start with http:// or https://" };
+  }
+  if (CONTROL_CHAR_RE.test(trimmed)) {
+    return { valid: false, error: "URL contains invalid control characters" };
+  }
+  return { valid: true, value: trimmed };
 };
 
 export const validateMcpArgs = (
