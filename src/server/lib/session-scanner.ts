@@ -1,4 +1,6 @@
-import { readdir, readFile, stat } from "fs/promises";
+import { readdir, stat } from "fs/promises";
+import { createReadStream } from "fs";
+import { createInterface } from "readline";
 import { join, basename, resolve } from "path";
 import { PATHS, getProjectSessionsDir, loadKnownProjects } from "./paths";
 import { readJsonFile } from "./file-io";
@@ -157,19 +159,43 @@ const extractFirstUserText = (content: unknown): string => {
   return "";
 };
 
+// Stream a .jsonl file line-by-line, invoking `onEntry` for each parsed JSON
+// line. Bounds memory to a single line regardless of file size — some
+// transcripts exceed 300MB, and reading them whole (readFile + split) grew the
+// V8 heap past its limit (~4.5GB) and crashed the server with OOM. Returns
+// false if the file could not be read.
+const forEachJsonlEntry = async (
+  filePath: string,
+  onEntry: (entry: JsonlEntry) => void
+): Promise<boolean> => {
+  const rl = createInterface({
+    input: createReadStream(filePath, { encoding: "utf-8" }),
+    crlfDelay: Infinity,
+  });
+  try {
+    for await (const line of rl) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let entry: JsonlEntry;
+      try {
+        entry = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
+      onEntry(entry);
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rl.close();
+  }
+};
+
 const parseJsonlForMeta = async (
   filePath: string,
   projectPath: string
 ): Promise<SessionMeta | null> => {
-  let raw: string;
-  try {
-    raw = await readFile(filePath, "utf-8");
-  } catch {
-    return null;
-  }
-
-  const lines = raw.split("\n");
-
   let sessionId = "";
   let sessionName = "";
   let startTime = "";
@@ -189,17 +215,7 @@ const parseJsonlForMeta = async (
   let usesWebSearch = false;
   let usesTaskAgent = false;
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    let entry: JsonlEntry;
-    try {
-      entry = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-
+  const ok = await forEachJsonlEntry(filePath, (entry) => {
     // Capture sessionId, startTime, and session name
     if (!sessionId && entry.sessionId) {
       sessionId = entry.sessionId;
@@ -282,9 +298,9 @@ const parseJsonlForMeta = async (
         toolErrors++;
       }
     }
-  }
+  });
 
-  if (!sessionId || !startTime) return null;
+  if (!ok || !sessionId || !startTime) return null;
 
   // Calculate duration from first to last timestamp
   const startMs = new Date(startTime).getTime();
@@ -393,27 +409,10 @@ type CostCacheEntry = { costUSD: number; mtimeMs: number; size: number };
 const costCache = new Map<string, CostCacheEntry>();
 
 const computeCostFromJsonl = async (filePath: string): Promise<number | null> => {
-  let raw: string;
-  try {
-    raw = await readFile(filePath, "utf-8");
-  } catch {
-    return null;
-  }
-
   let costUSD = 0;
   let currentModel = "";
 
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    let entry: JsonlEntry;
-    try {
-      entry = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-
+  const ok = await forEachJsonlEntry(filePath, (entry) => {
     if (entry.type === "assistant") {
       if (entry.message?.model) currentModel = entry.message.model;
       const usage = entry.message?.usage;
@@ -427,9 +426,9 @@ const computeCostFromJsonl = async (filePath: string): Promise<number | null> =>
         );
       }
     }
-  }
+  });
 
-  return costUSD;
+  return ok ? costUSD : null;
 };
 
 const enrichMetaSessionCosts = async (
