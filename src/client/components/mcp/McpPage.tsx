@@ -12,6 +12,7 @@ import type {
   McpOrigin,
   McpCatalogEntry,
   McpCatalogGroup,
+  McpServerConfig,
   CatalogResponse,
 } from "../../../shared/types";
 
@@ -29,7 +30,7 @@ const fetchCatalog = async (
 };
 
 const addServer = async (
-  server: { name: string; command: string; args: string[] },
+  server: { name: string; command?: string; url?: string; args?: string[] },
   projectPath: string | null
 ): Promise<void> => {
   const url = buildScopedUrl("/api/mcp/servers", projectPath);
@@ -99,14 +100,35 @@ const toggleProjectMcp = async (
   }
 };
 
+// A plugin MCP has no independent global on/off — it follows its plugin's
+// enabled state. Toggling it enables/disables the whole plugin(s) that provide
+// it (skills, agents, and commands included), via the plugins bulk-toggle.
+const togglePlugin = async (
+  pluginIds: string[],
+  enabled: boolean
+): Promise<void> => {
+  const response = await apiFetch("/api/plugins/bulk-toggle", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pluginIds, enabled }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error ?? `HTTP ${response.status}`);
+  }
+};
+
 const copyToProject = async (
   mcpName: string,
-  targetProjectPath: string
+  targetProjectPath: string,
+  config?: McpServerConfig
 ): Promise<void> => {
   const response = await apiFetch("/api/mcp/copy-to-project", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mcpName, targetProjectPath }),
+    // Send the config from the catalog entry so the server can copy MCPs
+    // defined in other projects' .mcp.json (it can't resolve those by name).
+    body: JSON.stringify({ mcpName, targetProjectPath, config }),
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
@@ -237,6 +259,7 @@ const CatalogCardItem = ({ item }: { item: CardItem }) => {
       origin={item.entry.origin}
       pluginName={item.entry.pluginName}
       pluginNames={item.entry.pluginNames}
+      pluginEnabled={item.entry.pluginEnabled}
       health={item.entry.health}
       type={item.entry.config.type ?? "stdio"}
       command={item.entry.config.command ?? item.entry.config.url ?? "—"}
@@ -265,13 +288,15 @@ const CardList = ({ items }: { items: CardItem[] }) => {
 type GlobalGroupListProps = {
   groups: McpCatalogGroup[];
   onGlobalToggle: (name: string, action: "enable" | "disable") => void;
+  onPluginToggle: (entry: McpCatalogEntry, action: "enable" | "disable") => void;
   onPin: (name: string) => void;
   onDelete: (name: string) => void;
 };
 
 const getGlobalAction = (
   entry: McpCatalogEntry,
-  onGlobalToggle: (name: string, action: "enable" | "disable") => void
+  onGlobalToggle: (name: string, action: "enable" | "disable") => void,
+  onPluginToggle: (entry: McpCatalogEntry, action: "enable" | "disable") => void
 ): CardItem["action"] => {
   if (entry.isPinned) return undefined;
   if (entry.origin === "global") {
@@ -280,10 +305,16 @@ const getGlobalAction = (
   if (entry.origin === "global-disabled") {
     return { label: "Re-enable", onClick: () => onGlobalToggle(entry.name, "enable") };
   }
+  // Plugin MCPs: toggle follows the plugin's enabled state.
+  if (entry.origin === "plugin") {
+    return entry.pluginEnabled === false
+      ? { label: "Enable plugin", onClick: () => onPluginToggle(entry, "enable") }
+      : { label: "Disable plugin", onClick: () => onPluginToggle(entry, "disable") };
+  }
   return undefined;
 };
 
-const GlobalGroupList = ({ groups, onGlobalToggle, onPin, onDelete }: GlobalGroupListProps) => {
+const GlobalGroupList = ({ groups, onGlobalToggle, onPluginToggle, onPin, onDelete }: GlobalGroupListProps) => {
   if (groups.length === 0) {
     return <EmptyState />;
   }
@@ -294,7 +325,7 @@ const GlobalGroupList = ({ groups, onGlobalToggle, onPin, onDelete }: GlobalGrou
       return {
         key: `${entry.origin}-${entry.name}`,
         entry,
-        action: getGlobalAction(entry, onGlobalToggle),
+        action: getGlobalAction(entry, onGlobalToggle, onPluginToggle),
         onPin,
         onDelete: canDelete ? onDelete : undefined,
       };
@@ -356,19 +387,33 @@ const ActiveSection = ({ groups, onToggle, onPin }: ActiveSectionProps) => {
 type DisabledSectionProps = {
   groups: McpCatalogGroup[];
   onToggle: (name: string, origin: McpOrigin, action: "enable" | "disable") => void;
+  onPluginToggle: (entry: McpCatalogEntry, action: "enable" | "disable") => void;
 };
 
-const DisabledSection = ({ groups, onToggle }: DisabledSectionProps) => {
+const getDisabledAction = (
+  entry: McpCatalogEntry,
+  onToggle: (name: string, origin: McpOrigin, action: "enable" | "disable") => void,
+  onPluginToggle: (entry: McpCatalogEntry, action: "enable" | "disable") => void
+): CardItem["action"] => {
+  // A plugin MCP disabled because its plugin is off can only be re-enabled by
+  // turning the plugin back on — per-project enable wouldn't load it.
+  if (entry.origin === "plugin" && entry.pluginEnabled === false) {
+    return { label: "Enable plugin", onClick: () => onPluginToggle(entry, "enable") };
+  }
+  return {
+    label: entry.origin === "global-disabled" ? "Re-enable globally" : "Enable",
+    onClick: () => onToggle(entry.name, entry.origin, "enable"),
+  };
+};
+
+const DisabledSection = ({ groups, onToggle, onPluginToggle }: DisabledSectionProps) => {
   const entries = collectAllEntries(groups);
   if (entries.length === 0) return null;
 
   const items: CardItem[] = entries.map((entry) => ({
     key: `disabled-${entry.origin}-${entry.name}`,
     entry,
-    action: {
-      label: entry.origin === "global-disabled" ? "Re-enable globally" : "Enable",
-      onClick: () => onToggle(entry.name, entry.origin, "enable"),
-    },
+    action: getDisabledAction(entry, onToggle, onPluginToggle),
     onPin: undefined,
     onDelete: undefined,
   }));
@@ -386,44 +431,42 @@ const DisabledSection = ({ groups, onToggle }: DisabledSectionProps) => {
 
 type AvailableSectionProps = {
   groups: McpCatalogGroup[];
-  onCopyToProject: (name: string) => void;
+  onCopyToProject: (entry: McpCatalogEntry) => void;
 };
 
 const AvailableSection = ({ groups, onCopyToProject }: AvailableSectionProps) => {
-  const totalCount = groups.reduce((sum, g) => sum + g.entries.length, 0);
-  if (totalCount === 0) return null;
+  // Flatten across the per-project groups and dedupe by name: the same MCP
+  // (e.g. expo-mcp) is often defined in several other projects' .mcp.json with
+  // different configs — show it once (first occurrence wins).
+  const seen = new Set<string>();
+  const entries: McpCatalogEntry[] = [];
+  for (const group of groups) {
+    for (const entry of group.entries) {
+      if (seen.has(entry.name)) continue;
+      seen.add(entry.name);
+      entries.push(entry);
+    }
+  }
+  if (entries.length === 0) return null;
 
-  const groupElements = groups.map((group) => {
-    const items: CardItem[] = group.entries.map((entry) => ({
-      key: `available-${entry.origin}-${entry.name}`,
-      entry,
-      action: {
-        label: "Add to project",
-        onClick: () => onCopyToProject(entry.name),
-      },
-      onPin: undefined,
-      onDelete: undefined,
-    }));
-
-    return (
-      <McpOriginGroup
-        key={`available-${group.origin}-${group.pluginName ?? group.label}`}
-        label={group.label}
-        count={group.entries.length}
-        defaultOpen={false}
-      >
-        <CardList items={items} />
-      </McpOriginGroup>
-    );
-  });
+  const items: CardItem[] = entries.map((entry) => ({
+    key: `available-${entry.name}`,
+    entry,
+    action: {
+      label: "Add to project",
+      onClick: () => onCopyToProject(entry),
+    },
+    onPin: undefined,
+    onDelete: undefined,
+  }));
 
   return (
     <McpCatalogSection
       title="Available from other sources"
-      count={totalCount}
+      count={entries.length}
       defaultOpen={false}
     >
-      <div className="flex flex-col gap-4">{groupElements}</div>
+      <CardList items={items} />
     </McpCatalogSection>
   );
 };
@@ -510,13 +553,42 @@ export const McpPage = ({ projectPath = null, onClearProject }: McpPageProps) =>
     [loadCatalog, toast]
   );
 
+  const handlePluginToggle = useCallback(
+    async (entry: McpCatalogEntry, action: "enable" | "disable") => {
+      const pluginIds = entry.pluginIds ?? (entry.pluginId ? [entry.pluginId] : []);
+      if (pluginIds.length === 0) {
+        toast("Can't toggle: unknown plugin for this MCP", "error");
+        return;
+      }
+      const pluginLabel = entry.pluginName ?? pluginIds.join(", ");
+      if (action === "disable") {
+        const confirmed = window.confirm(
+          `Disable the "${pluginLabel}" plugin? This turns off "${entry.name}" plus any skills, agents, and commands the plugin provides. It's the only way Claude Code can disable a plugin's MCP globally.`
+        );
+        if (!confirmed) return;
+      }
+      try {
+        await togglePlugin(pluginIds, action === "enable");
+        await loadCatalog();
+        toast(
+          `${pluginLabel} plugin ${action === "enable" ? "enabled" : "disabled"}`,
+          "success"
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Plugin toggle failed";
+        toast(msg, "error");
+      }
+    },
+    [loadCatalog, toast]
+  );
+
   const handleCopyToProject = useCallback(
-    async (mcpName: string) => {
+    async (entry: McpCatalogEntry) => {
       if (!projectPath) return;
       try {
-        await copyToProject(mcpName, projectPath);
+        await copyToProject(entry.name, projectPath, entry.config);
         await loadCatalog();
-        toast(`${mcpName} added to project`, "success");
+        toast(`${entry.name} added to project`, "success");
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Copy failed";
         toast(msg, "error");
@@ -581,7 +653,7 @@ export const McpPage = ({ projectPath = null, onClearProject }: McpPageProps) =>
   }, [loadCatalog, projectPath, toast]);
 
   const handleAddServer = useCallback(
-    async (server: { name: string; command: string; args: string[] }) => {
+    async (server: { name: string; command?: string; url?: string; args?: string[] }) => {
       await addServer(server, projectPath);
       await loadCatalog();
       setIsFormOpen(false);
@@ -631,6 +703,7 @@ export const McpPage = ({ projectPath = null, onClearProject }: McpPageProps) =>
             onCancelForm={handleCancelForm}
             onAddServer={handleAddServer}
             onGlobalToggle={handleGlobalToggle}
+            onPluginToggle={handlePluginToggle}
             onPin={handlePin}
             onDelete={handleDelete}
             isRefreshing={isRefreshing}
@@ -643,6 +716,7 @@ export const McpPage = ({ projectPath = null, onClearProject }: McpPageProps) =>
             catalog={catalog}
             onRefresh={handleRefresh}
             onToggle={handleToggle}
+            onPluginToggle={handlePluginToggle}
             onCopyToProject={handleCopyToProject}
             onPin={handlePin}
             isRefreshing={isRefreshing}
@@ -664,10 +738,12 @@ type GlobalViewContentProps = {
   onCancelForm: () => void;
   onAddServer: (server: {
     name: string;
-    command: string;
-    args: string[];
+    command?: string;
+    url?: string;
+    args?: string[];
   }) => Promise<void>;
   onGlobalToggle: (name: string, action: "enable" | "disable") => void;
+  onPluginToggle: (entry: McpCatalogEntry, action: "enable" | "disable") => void;
   onPin: (name: string) => void;
   onDelete: (name: string) => void;
   isRefreshing: boolean;
@@ -681,6 +757,7 @@ const GlobalViewContent = ({
   onCancelForm,
   onAddServer,
   onGlobalToggle,
+  onPluginToggle,
   onPin,
   onDelete,
   isRefreshing,
@@ -708,6 +785,7 @@ const GlobalViewContent = ({
       <GlobalGroupList
         groups={catalog.groups}
         onGlobalToggle={onGlobalToggle}
+        onPluginToggle={onPluginToggle}
         onPin={onPin}
         onDelete={onDelete}
       />
@@ -723,7 +801,8 @@ type ProjectViewContentProps = {
   catalog: CatalogResponse;
   onRefresh: () => void;
   onToggle: (name: string, origin: McpOrigin, action: "enable" | "disable") => void;
-  onCopyToProject: (name: string) => void;
+  onPluginToggle: (entry: McpCatalogEntry, action: "enable" | "disable") => void;
+  onCopyToProject: (entry: McpCatalogEntry) => void;
   onPin: (name: string) => void;
   isRefreshing: boolean;
 };
@@ -732,6 +811,7 @@ const ProjectViewContent = ({
   catalog,
   onRefresh,
   onToggle,
+  onPluginToggle,
   onCopyToProject,
   onPin,
   isRefreshing,
@@ -755,6 +835,7 @@ const ProjectViewContent = ({
       <DisabledSection
         groups={catalog.disabled ?? []}
         onToggle={onToggle}
+        onPluginToggle={onPluginToggle}
       />
 
       <AvailableSection

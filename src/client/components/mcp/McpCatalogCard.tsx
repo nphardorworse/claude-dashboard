@@ -9,6 +9,7 @@ type McpCatalogCardProps = {
   origin: McpOrigin;
   pluginName?: string;
   pluginNames?: string[];
+  pluginEnabled?: boolean;
   health: McpCatalogEntry["health"];
   type: string;
   command: string;
@@ -134,11 +135,20 @@ const CommandDisplay = ({ command }: { command: string }) => {
   );
 };
 
+const PluginOffBadge = () => {
+  return (
+    <span className="rounded-full bg-zinc-500/10 px-2 py-0.5 text-[10px] font-medium text-zinc-400 ring-1 ring-zinc-500/20">
+      plugin off
+    </span>
+  );
+};
+
 const McpCatalogCard = ({
   name,
   origin,
   pluginName,
   pluginNames,
+  pluginEnabled,
   health,
   type,
   command,
@@ -156,11 +166,15 @@ const McpCatalogCard = ({
     }
   }, [name, onDelete]);
 
+  // A plugin MCP whose plugin is disabled isn't loaded by Claude Code — dim it
+  // and flag it so the off-state reads at a glance.
+  const isPluginOff = origin === "plugin" && pluginEnabled === false;
+
   return (
     <Card className="group hover:ring-[var(--border-accent)]">
       <CardContent className="p-4">
         <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0 flex-1">
+        <div className={`min-w-0 flex-1${isPluginOff ? " opacity-55" : ""}`}>
           <div className="flex flex-wrap items-center gap-2.5">
             <h3 className="truncate text-[13px] font-semibold text-zinc-100">
               {name}
@@ -169,7 +183,7 @@ const McpCatalogCard = ({
               {type}
             </span>
             <OriginBadge origin={origin} pluginName={pluginName} pluginNames={pluginNames} />
-            <StatusDot health={health} />
+            {isPluginOff ? <PluginOffBadge /> : <StatusDot health={health} />}
           </div>
           <CommandDisplay command={command} />
         </div>

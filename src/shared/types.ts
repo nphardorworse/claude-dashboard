@@ -431,6 +431,13 @@ export type McpCatalogEntry = {
   origin: McpOrigin;
   pluginName?: string;
   pluginNames?: string[];
+  // Plugin MCPs only: the installed-plugin id(s) that provide this server, and
+  // whether the plugin is currently enabled. A plugin MCP follows its plugin's
+  // enabled state — disabling the plugin disables the MCP (Claude Code stops
+  // loading it). pluginIds is what an inline toggle acts on.
+  pluginId?: string;
+  pluginIds?: string[];
+  pluginEnabled?: boolean;
   sourceProject?: string;
   config: McpServerConfig;
   health: "connected" | "needs_auth" | "failed" | "unknown";

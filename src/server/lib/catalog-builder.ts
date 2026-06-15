@@ -1,5 +1,5 @@
 import { basename, join } from "path";
-import { PATHS, loadKnownProjects } from "./paths";
+import { PATHS, loadKnownProjects, getSettingsPath } from "./paths";
 import { readJsonFile } from "./file-io";
 import { checkMcpHealth } from "./mcp-health";
 import { scanPluginMcps } from "./plugin-mcp-scanner";
@@ -16,6 +16,10 @@ import type {
 type DashboardConfig = {
   pinnedMcpServers?: string[];
   [key: string]: unknown;
+};
+
+type SettingsJson = {
+  enabledPlugins?: Record<string, boolean>;
 };
 
 type McpJsonFile = Record<string, unknown>;
@@ -119,14 +123,38 @@ const scanProjectMcps = async (
 export const buildCatalog = async (
   projectPath?: string,
 ): Promise<CatalogResponse> => {
-  const [claudeJson, dashConfig, healthList, pluginMcps, knownProjects] =
-    await Promise.all([
-      readJsonFile<ClaudeJson>(PATHS.claudeJson),
-      readJsonFile<DashboardConfig>(PATHS.dashboardConfig),
-      checkMcpHealth(),
-      scanPluginMcps(),
-      loadKnownProjects(),
-    ]);
+  const [
+    claudeJson,
+    dashConfig,
+    healthList,
+    pluginMcps,
+    knownProjects,
+    globalSettings,
+    projectSettings,
+  ] = await Promise.all([
+    readJsonFile<ClaudeJson>(PATHS.claudeJson),
+    readJsonFile<DashboardConfig>(PATHS.dashboardConfig),
+    checkMcpHealth(),
+    scanPluginMcps(),
+    loadKnownProjects(),
+    readJsonFile<SettingsJson>(PATHS.globalSettings),
+    projectPath
+      ? readJsonFile<SettingsJson>(getSettingsPath(projectPath))
+      : Promise.resolve(null),
+  ]);
+
+  // A plugin MCP is enabled iff its plugin is enabled. Project settings override
+  // global, global overrides the "enabled by default" Claude Code behavior —
+  // same precedence as the Plugins page (plugin-scanner.ts resolveEnabled).
+  const globalEnabledPlugins = globalSettings?.enabledPlugins ?? {};
+  const projectEnabledPlugins = projectSettings?.enabledPlugins ?? null;
+  const isPluginEnabled = (pluginId: string): boolean => {
+    if (projectEnabledPlugins && pluginId in projectEnabledPlugins) {
+      return projectEnabledPlugins[pluginId];
+    }
+    if (pluginId in globalEnabledPlugins) return globalEnabledPlugins[pluginId];
+    return true;
+  };
 
   // Health lookup
   const healthMap = new Map<string, McpCatalogEntry["health"]>();
@@ -162,13 +190,19 @@ export const buildCatalog = async (
 
   for (const pm of pluginMcps) {
     knownNames.add(pm.mcpName);
+    const pmEnabled = isPluginEnabled(pm.pluginId);
     const existing = pluginDedupMap.get(pm.mcpName);
 
     if (existing && existing.config.command === pm.config.command && existing.config.url === pm.config.url) {
-      // Same name + same target: merge plugin names
+      // Same name + same target: merge plugin names + ids. The MCP is enabled if
+      // ANY contributing plugin is enabled (Claude Code loads it from that one).
       const names = existing.pluginNames ?? (existing.pluginName ? [existing.pluginName] : []);
       if (!names.includes(pm.pluginName)) names.push(pm.pluginName);
       existing.pluginNames = names;
+      const ids = existing.pluginIds ?? [];
+      if (!ids.includes(pm.pluginId)) ids.push(pm.pluginId);
+      existing.pluginIds = ids;
+      existing.pluginEnabled = (existing.pluginEnabled ?? false) || pmEnabled;
       // Register existing entry in the second plugin's group too
       const secondGroup = pluginGroupMap.get(pm.pluginName) ?? [];
       if (!secondGroup.includes(existing)) secondGroup.push(existing);
@@ -191,7 +225,12 @@ export const buildCatalog = async (
       pm.config,
       healthMap,
       pinnedSet,
-      { pluginName: pm.pluginName },
+      {
+        pluginName: pm.pluginName,
+        pluginId: pm.pluginId,
+        pluginIds: [pm.pluginId],
+        pluginEnabled: pmEnabled,
+      },
     );
     if (!existing) pluginDedupMap.set(pm.mcpName, entry);
 
@@ -283,6 +322,8 @@ export const buildCatalog = async (
       case "global":
         return disabledGlobal.has(entry.name) ? "disabled" : "active";
       case "plugin":
+        // Plugin turned off globally/for this project → its MCP isn't loaded.
+        if (entry.pluginEnabled === false) return "disabled";
         if (disabledPlugin.has(entry.name)) return "disabled";
         if (enabledPlugin.has(entry.name)) return "active";
         return "active"; // Claude Code default: plugins on
