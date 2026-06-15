@@ -44,7 +44,10 @@ app.route("/api/usage", usage);
 app.route("/api/transcripts", transcripts);
 
 const PORT = 3847;
-const MAX_BIND_RETRIES = 10;
+// Retry the bind for ~12s. `tsx watch` can take up to ~5s to force-kill a busy
+// (e.g. mid-prewarm) previous instance, so a budget shorter than that loses the
+// port-handoff race and the dev server stays down. 12s clears it with margin.
+const MAX_BIND_RETRIES = 48;
 const BIND_RETRY_DELAY_MS = 250;
 
 const onListening = () => {
