@@ -475,6 +475,30 @@ const enrichMetaSessionCosts = async (
   }
 };
 
+// ─── Dedup ─────────────────────────────────────────────────
+
+// Collapse sessions sharing the same sessionId, keeping the first occurrence.
+//
+// The emitted sessionId comes from the JSONL *content* (the first line's
+// `sessionId` field), but every upstream gate — excludeIds, the jsonlCache key,
+// and metaIds — keys off the *filename*. When a session is resumed or forked,
+// Claude Code writes a new file (new filename) whose replayed history still
+// carries the original sessionId on line 1. So one logical session surfaces as
+// several files with distinct names but an identical emitted sessionId, which
+// the filename-based gates can't catch. Left unmerged they collide on the React
+// list key and inflate usage/cost totals. First occurrence wins (meta over
+// JSONL, since callers prepend meta sessions).
+const dedupeBySessionId = (sessions: SessionMeta[]): SessionMeta[] => {
+  const seen = new Set<string>();
+  const result: SessionMeta[] = [];
+  for (const session of sessions) {
+    if (seen.has(session.sessionId)) continue;
+    seen.add(session.sessionId);
+    result.push(session);
+  }
+  return result;
+};
+
 // ─── Public API ────────────────────────────────────────────
 
 // Cache for the full scan (meta + JSONL across all projects)
@@ -504,7 +528,7 @@ const scanAllSessions = async (): Promise<SessionMeta[]> => {
   await enrichMetaSessionCosts(metaSessions, knownProjects);
 
   const allJsonl = jsonlBatches.flat();
-  const merged = [...metaSessions, ...allJsonl];
+  const merged = dedupeBySessionId([...metaSessions, ...allJsonl]);
 
   cachedAllSessions = merged;
   allSessionsCacheTimestamp = Date.now();
@@ -546,5 +570,5 @@ export const getSessionsForProject = async (
   await enrichMetaSessionCosts(metaForProject, new Set([projectPath]));
 
   // Merge: meta sessions + JSONL-only sessions
-  return [...metaForProject, ...jsonlSessions];
+  return dedupeBySessionId([...metaForProject, ...jsonlSessions]);
 };
