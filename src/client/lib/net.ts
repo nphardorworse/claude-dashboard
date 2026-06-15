@@ -84,16 +84,24 @@ export const installNetInstrumentation = (): void => {
   ): Promise<Response> => {
     if (!isApiRequest(input)) return originalFetch(input, init);
 
+    // Only retry idempotent reads. A mutation can be committed server-side and
+    // still surface as a thrown error or proxy 503 if the connection drops
+    // after the write (e.g. mid `tsx watch` restart), so retrying it would
+    // double-apply — a duplicate snapshot/profile/server. Reads repeat safely.
+    const method = (
+      init?.method ?? (input instanceof Request ? input.method : "GET")
+    ).toUpperCase();
+    const retriable = method === "GET" || method === "HEAD";
+
     inflight += 1;
     emit();
 
-    // A 503 from the Vite proxy, or a thrown connect error, both mean the
-    // request never reached the app — safe to retry regardless of method.
     try {
       for (let attempt = 0; ; attempt += 1) {
+        const canRetry = retriable && attempt < RETRY_DELAYS_MS.length;
         try {
           const res = await originalFetch(input, init);
-          if (res.status === 503 && attempt < RETRY_DELAYS_MS.length) {
+          if (res.status === 503 && canRetry) {
             await sleep(RETRY_DELAYS_MS[attempt]);
             continue;
           }
@@ -101,7 +109,7 @@ export const installNetInstrumentation = (): void => {
           return res;
         } catch (err) {
           if (isAbort(err, init)) throw err;
-          if (attempt < RETRY_DELAYS_MS.length) {
+          if (canRetry) {
             await sleep(RETRY_DELAYS_MS[attempt]);
             continue;
           }

@@ -46,7 +46,10 @@ export const TopProgressBar = () => {
         t.appear = window.setTimeout(() => {
           t.appear = undefined;
           setVisible(true);
-          setProgress((p) => (p < 10 ? 10 : p));
+          // Start each fresh cycle from the bottom. (Not max(p,10): a load that
+          // preempts the pending fade-out leaves progress at 100, which would
+          // render at opacity 0 — an invisible bar for a real load.)
+          setProgress(10);
           // Ease toward 90% but never reach it until the load actually finishes.
           t.trickle = window.setInterval(() => {
             setProgress((p) => (p < 90 ? p + (90 - p) * 0.12 : p));
