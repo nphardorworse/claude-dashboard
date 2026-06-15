@@ -2,6 +2,8 @@ import { useCallback } from "react";
 import type { SkillInfo, EnableSource, TokenLevel } from "../../../shared/types";
 import { Toggle } from "../shared/Toggle";
 import { Badge } from "../shared/Badge";
+import { TrashIcon } from "../shared/NavIcons";
+import { Button } from "~/client/components/ui/button";
 import { Card, CardContent } from "~/client/components/ui/card";
 
 const SOURCE_LABELS: Record<EnableSource, string> = {
@@ -32,10 +34,12 @@ const SOURCE_BADGE_VARIANT: Record<string, string> = {
 type SkillCardProps = {
   skill: SkillInfo;
   onToggle: (skillId: string, enabled: boolean) => void;
+  onDelete: (skillId: string) => void;
   isToggling: boolean;
+  isDeleting: boolean;
 };
 
-export const SkillCard = ({ skill, onToggle, isToggling }: SkillCardProps) => {
+export const SkillCard = ({ skill, onToggle, onDelete, isToggling, isDeleting }: SkillCardProps) => {
   const handleToggle = useCallback(
     (checked: boolean) => {
       onToggle(skill.id, checked);
@@ -43,7 +47,13 @@ export const SkillCard = ({ skill, onToggle, isToggling }: SkillCardProps) => {
     [onToggle, skill.id]
   );
 
+  const handleDelete = useCallback(() => {
+    onDelete(skill.id);
+  }, [onDelete, skill.id]);
+
   const toggleDisabled = isToggling || !skill.parentPluginEnabled;
+  // Plugin skills are owned by their plugin — delete by uninstalling the plugin.
+  const canDelete = skill.source !== "plugin";
 
   return (
     <Card
@@ -98,12 +108,27 @@ export const SkillCard = ({ skill, onToggle, isToggling }: SkillCardProps) => {
           </div>
         </div>
 
-        <div className="shrink-0" title={!skill.parentPluginEnabled ? "Enable the parent plugin first" : undefined}>
-          <Toggle
-            checked={skill.enabled}
-            onChange={handleToggle}
-            disabled={toggleDisabled}
-          />
+        <div className="flex shrink-0 items-center gap-1.5">
+          {canDelete && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              title="Delete skill"
+              aria-label="Delete skill"
+              className="text-zinc-500 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100 focus-visible:opacity-100"
+            >
+              <TrashIcon />
+            </Button>
+          )}
+          <div title={!skill.parentPluginEnabled ? "Enable the parent plugin first" : undefined}>
+            <Toggle
+              checked={skill.enabled}
+              onChange={handleToggle}
+              disabled={toggleDisabled}
+            />
+          </div>
         </div>
         </div>
       </CardContent>

@@ -4,10 +4,12 @@ import { PluginCard } from "./PluginCard";
 type PluginGridProps = {
   plugins: PluginInfo[];
   onToggle: (pluginId: string, enabled: boolean) => void;
+  onDelete: (pluginId: string) => void;
   togglingIds: Set<string>;
+  deletingIds: Set<string>;
 };
 
-export const PluginGrid = ({ plugins, onToggle, togglingIds }: PluginGridProps) => {
+export const PluginGrid = ({ plugins, onToggle, onDelete, togglingIds, deletingIds }: PluginGridProps) => {
   if (plugins.length === 0) {
     return (
       <div className="rounded-xl bg-[var(--surface-raised)] ring-1 ring-[var(--border-hairline)] p-8 text-center">
@@ -23,7 +25,9 @@ export const PluginGrid = ({ plugins, onToggle, togglingIds }: PluginGridProps) 
           key={plugin.id}
           plugin={plugin}
           onToggle={onToggle}
+          onDelete={onDelete}
           isToggling={togglingIds.has(plugin.id)}
+          isDeleting={deletingIds.has(plugin.id)}
         />
       ))}
     </div>

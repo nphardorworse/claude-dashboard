@@ -117,6 +117,18 @@ const togglePlugin = async (
   }
 };
 
+const uninstallPlugin = async (pluginId: string): Promise<void> => {
+  const response = await apiFetch("/api/plugins/uninstall", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pluginId }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error ?? `HTTP ${response.status}`);
+  }
+};
+
 type PluginsPageProps = {
   projectPath?: string | null;
   onClearProject?: () => void;
@@ -131,6 +143,7 @@ export const PluginsPage = ({ projectPath = null, onClearProject }: PluginsPageP
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
   const activeCount = useMemo(() => plugins.filter((p) => p.enabled).length, [plugins]);
   const totalEstimatedTokens = useMemo(
@@ -182,6 +195,32 @@ export const PluginsPage = ({ projectPath = null, onClearProject }: PluginsPageP
       }
     },
     [projectPath, loadPlugins, toast]
+  );
+
+  const handleDelete = useCallback(
+    async (pluginId: string) => {
+      const plugin = plugins.find((p) => p.id === pluginId);
+      const confirmed = window.confirm(
+        `Uninstall "${plugin?.name ?? pluginId}"?\n\nThis removes the plugin and its files from disk (skills, agents, commands, MCP). You'd have to reinstall it to get it back.`
+      );
+      if (!confirmed) return;
+
+      setDeletingIds((prev) => new Set([...prev, pluginId]));
+      try {
+        await uninstallPlugin(pluginId);
+        setPlugins((prev) => prev.filter((p) => p.id !== pluginId));
+        toast(`${plugin?.name ?? pluginId} uninstalled`, "success");
+      } catch (err) {
+        toast(err instanceof Error ? err.message : "Uninstall failed", "error");
+      } finally {
+        setDeletingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(pluginId);
+          return next;
+        });
+      }
+    },
+    [plugins, toast]
   );
 
   const categories = useMemo(() => {
@@ -258,7 +297,9 @@ export const PluginsPage = ({ projectPath = null, onClearProject }: PluginsPageP
             <PluginGrid
               plugins={filteredPlugins}
               onToggle={handleToggle}
+              onDelete={handleDelete}
               togglingIds={togglingIds}
+              deletingIds={deletingIds}
             />
           </>
         )}

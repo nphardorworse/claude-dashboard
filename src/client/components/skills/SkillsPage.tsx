@@ -118,6 +118,22 @@ const toggleSkill = async (
   }
 };
 
+const deleteSkill = async (
+  skillId: string,
+  projectPath: string | null
+): Promise<void> => {
+  const url = buildScopedUrl("/api/skills/delete", projectPath);
+  const response = await apiFetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ skillId }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error ?? `HTTP ${response.status}`);
+  }
+};
+
 type SkillsPageProps = {
   projectPath?: string | null;
   onClearProject?: () => void;
@@ -132,6 +148,7 @@ export const SkillsPage = ({ projectPath = null, onClearProject }: SkillsPagePro
   const [statusFilter, setStatusFilter] = useState<StatusFilterOption>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
   const activeCount = useMemo(() => skills.filter((s) => s.enabled).length, [skills]);
   const totalEstimatedTokens = useMemo(
@@ -182,6 +199,32 @@ export const SkillsPage = ({ projectPath = null, onClearProject }: SkillsPagePro
       }
     },
     [projectPath, loadSkills, toast]
+  );
+
+  const handleDelete = useCallback(
+    async (skillId: string) => {
+      const skill = skills.find((s) => s.id === skillId);
+      const confirmed = window.confirm(
+        `Delete "${skill?.name ?? skillId}"?\n\nThis permanently removes the skill's folder from disk. This can't be undone.`
+      );
+      if (!confirmed) return;
+
+      setDeletingIds((prev) => new Set([...prev, skillId]));
+      try {
+        await deleteSkill(skillId, projectPath);
+        setSkills((prev) => prev.filter((s) => s.id !== skillId));
+        toast(`${skill?.name ?? skillId} deleted`, "success");
+      } catch (err) {
+        toast(err instanceof Error ? err.message : "Delete failed", "error");
+      } finally {
+        setDeletingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(skillId);
+          return next;
+        });
+      }
+    },
+    [skills, projectPath, toast]
   );
 
   const categories = useMemo((): CategoryItem[] => {
@@ -281,7 +324,9 @@ export const SkillsPage = ({ projectPath = null, onClearProject }: SkillsPagePro
             <SkillGrid
               skills={filteredSkills}
               onToggle={handleToggle}
+              onDelete={handleDelete}
               togglingIds={togglingIds}
+              deletingIds={deletingIds}
             />
           </>
         )}

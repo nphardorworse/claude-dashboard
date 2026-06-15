@@ -4,10 +4,12 @@ import { SkillCard } from "./SkillCard";
 type SkillGridProps = {
   skills: SkillInfo[];
   onToggle: (skillId: string, enabled: boolean) => void;
+  onDelete: (skillId: string) => void;
   togglingIds: Set<string>;
+  deletingIds: Set<string>;
 };
 
-export const SkillGrid = ({ skills, onToggle, togglingIds }: SkillGridProps) => {
+export const SkillGrid = ({ skills, onToggle, onDelete, togglingIds, deletingIds }: SkillGridProps) => {
   if (skills.length === 0) {
     return (
       <div className="rounded-xl bg-[var(--surface-raised)] ring-1 ring-[var(--border-hairline)] p-8 text-center">
@@ -23,7 +25,9 @@ export const SkillGrid = ({ skills, onToggle, togglingIds }: SkillGridProps) => 
           key={skill.id}
           skill={skill}
           onToggle={onToggle}
+          onDelete={onDelete}
           isToggling={togglingIds.has(skill.id)}
+          isDeleting={deletingIds.has(skill.id)}
         />
       ))}
     </div>

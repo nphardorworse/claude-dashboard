@@ -2,6 +2,8 @@ import { useCallback } from "react";
 import type { PluginInfo, PluginEnableSource } from "../../../shared/types";
 import { Toggle } from "../shared/Toggle";
 import { Badge } from "../shared/Badge";
+import { TrashIcon } from "../shared/NavIcons";
+import { Button } from "~/client/components/ui/button";
 import { Card, CardContent } from "~/client/components/ui/card";
 import type { TokenLevel } from "../../../shared/types";
 
@@ -14,7 +16,9 @@ const SOURCE_LABELS: Record<PluginEnableSource, string> = {
 type PluginCardProps = {
   plugin: PluginInfo;
   onToggle: (pluginId: string, enabled: boolean) => void;
+  onDelete: (pluginId: string) => void;
   isToggling: boolean;
+  isDeleting: boolean;
 };
 
 const TOKEN_LABELS: Record<TokenLevel, string> = {
@@ -44,13 +48,17 @@ const PluginTypeBadges = ({
   );
 };
 
-export const PluginCard = ({ plugin, onToggle, isToggling }: PluginCardProps) => {
+export const PluginCard = ({ plugin, onToggle, onDelete, isToggling, isDeleting }: PluginCardProps) => {
   const handleToggle = useCallback(
     (checked: boolean) => {
       onToggle(plugin.id, checked);
     },
     [onToggle, plugin.id]
   );
+
+  const handleDelete = useCallback(() => {
+    onDelete(plugin.id);
+  }, [onDelete, plugin.id]);
 
   return (
     <Card
@@ -96,7 +104,18 @@ export const PluginCard = ({ plugin, onToggle, isToggling }: PluginCardProps) =>
           </div>
         </div>
 
-        <div className="shrink-0">
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={handleDelete}
+            disabled={isDeleting}
+            title="Uninstall plugin"
+            aria-label="Uninstall plugin"
+            className="text-zinc-500 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100 focus-visible:opacity-100"
+          >
+            <TrashIcon />
+          </Button>
           <Toggle
             checked={plugin.enabled}
             onChange={handleToggle}
