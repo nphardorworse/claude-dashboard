@@ -141,20 +141,49 @@ type DashboardConfig = {
   [key: string]: unknown;
 };
 
+// Detecting the context window means finding the model used most in the last
+// 7 days, which needs session data. getAllSessions() parses every transcript
+// (gigabytes here), so /api/health — polled every 5s — was re-scanning on every
+// request and the scans piled up (7–30s "Loading health data…" that never
+// settled). Cache the detected value with stale-while-revalidate: the window
+// changes rarely, so serve the last value instantly and refresh in the
+// background at most once per 5 min, coalescing concurrent callers.
+const CONTEXT_WINDOW_TTL_MS = 5 * 60 * 1000;
+let cachedContextWindow = DEFAULT_CONTEXT_WINDOW;
+let contextWindowComputedAt = 0;
+let contextWindowRefresh: Promise<number> | null = null;
+
+const refreshContextWindow = async (): Promise<number> => {
+  let result = DEFAULT_CONTEXT_WINDOW;
+  try {
+    const sessions = await getAllSessions();
+    const detected = detectContextWindowFromSessions(sessions);
+    if (detected != null) result = detected;
+  } catch {
+    // keep default
+  }
+  cachedContextWindow = result;
+  contextWindowComputedAt = Date.now();
+  return result;
+};
+
 const resolveContextWindow = async (): Promise<number> => {
   const config = await readJsonFile<DashboardConfig>(PATHS.dashboardConfig);
   const override = config?.contextWindowSize;
   if (override != null) return override;
 
-  try {
-    const sessions = await getAllSessions();
-    const detected = detectContextWindowFromSessions(sessions);
-    if (detected != null) return detected;
-  } catch {
-    // Fall through to default
+  const age = Date.now() - contextWindowComputedAt;
+  const stale = contextWindowComputedAt === 0 || age >= CONTEXT_WINDOW_TTL_MS;
+  if (stale && !contextWindowRefresh) {
+    contextWindowRefresh = refreshContextWindow().finally(() => {
+      contextWindowRefresh = null;
+    });
   }
 
-  return DEFAULT_CONTEXT_WINDOW;
+  // Never block health on a transcript scan. Serve the cached value immediately
+  // (the default until the first background refresh lands a few seconds after
+  // startup, then the detected value). The Overview's next 5s poll picks it up.
+  return cachedContextWindow;
 };
 
 const findDuplicatePlugins = (
