@@ -103,6 +103,12 @@ projects.get("/", async (c) => {
       Array.from(allPaths).map(async (path) => {
         if (isNodeModulesPath(path)) return null;
 
+        // Skip stale entries: ~/.claude.json accumulates project paths that no
+        // longer exist on disk (moved/deleted projects, removed worktrees).
+        // Listing them produces duplicate-looking dropdown items when a project
+        // has been moved, so drop any project whose directory is gone.
+        if (!(await pathExists(path))) return null;
+
         const meta = projectsMap.get(path) ?? {};
         const paths = projectPaths(path);
         const hasSettings = await pathExists(paths.settings);
