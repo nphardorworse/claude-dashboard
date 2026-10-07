@@ -7,17 +7,9 @@ import { withFileLock } from "../lib/file-lock";
 import { scanPlugins } from "../lib/plugin-scanner";
 import { scanSkills } from "../lib/skill-scanner";
 import { validateHooksMap } from "../lib/validation";
+import { normalizeProfile, type ProfileFile } from "../lib/profile-file";
 import type { HooksMap, ProfileEntry } from "../../shared/types";
 import type { ClaudeJson, ProjectEntry } from "../lib/types";
-
-type ProfileFile = {
-  _description: string;
-  enabledPlugins: Record<string, boolean>;
-  enabledSkills: Record<string, boolean>;
-  hooks: HooksMap;
-  enabledMcpServers: string[];
-  disabledMcpServers: string[];
-};
 
 type SettingsFile = {
   enabledPlugins?: Record<string, boolean>;
@@ -203,26 +195,17 @@ profiles.get("/", async (c) => {
 
     for (const file of jsonFiles) {
       const filePath = join(PATHS.profilesDir, file);
-      const data = await readJsonFile<ProfileFile>(filePath);
-      if (!data || !data.enabledPlugins) continue;
+      const data = normalizeProfile(await readJsonFile<unknown>(filePath));
+      if (!data) continue;
 
       const name = file.replace(/\.json$/, "");
       const pluginCount = getEnabledKeys(data.enabledPlugins).size;
-      const skillCount = getEnabledKeys(data.enabledSkills ?? {}).size;
-      const hookEventCount = Object.keys(data.hooks ?? {}).length;
-      const mcpServerCount = (data.enabledMcpServers ?? []).length;
-
-      const normalizedProfile: ProfileFile = {
-        _description: data._description ?? "",
-        enabledPlugins: data.enabledPlugins,
-        enabledSkills: data.enabledSkills ?? {},
-        hooks: data.hooks ?? {},
-        enabledMcpServers: data.enabledMcpServers ?? [],
-        disabledMcpServers: data.disabledMcpServers ?? [],
-      };
+      const skillCount = getEnabledKeys(data.enabledSkills).size;
+      const hookEventCount = Object.keys(data.hooks).length;
+      const mcpServerCount = data.enabledMcpServers.length;
 
       const isActive = isFullSuiteMatch(
-        normalizedProfile,
+        data,
         effectivePlugins,
         effectiveSkills,
         effectiveHooks,
@@ -234,16 +217,16 @@ profiles.get("/", async (c) => {
 
       entries.push({
         name,
-        description: data._description ?? "",
+        description: data._description,
         pluginCount,
         skillCount,
         hookEventCount,
         mcpServerCount,
         plugins: data.enabledPlugins,
-        skills: data.enabledSkills ?? {},
-        hooks: data.hooks ?? {},
-        enabledMcpServers: data.enabledMcpServers ?? [],
-        disabledMcpServers: data.disabledMcpServers ?? [],
+        skills: data.enabledSkills,
+        hooks: data.hooks,
+        enabledMcpServers: data.enabledMcpServers,
+        disabledMcpServers: data.disabledMcpServers,
         isActive,
       });
     }
@@ -271,7 +254,7 @@ profiles.post("/switch", async (c) => {
     }
     const profileFilePath = join(PATHS.profilesDir, `${profileName}.json`);
 
-    const profile = await readJsonFile<ProfileFile>(profileFilePath);
+    const profile = normalizeProfile(await readJsonFile<unknown>(profileFilePath));
     if (!profile) {
       return c.json({ error: `Profile "${profileName}" not found` }, 404);
     }
@@ -314,7 +297,7 @@ profiles.post("/switch", async (c) => {
         enabledPlugins: updatedPlugins,
       };
 
-      const profileSkills = profile.enabledSkills ?? {};
+      const profileSkills = profile.enabledSkills;
       const updatedSkills: Record<string, boolean> = {};
       for (const key of Object.keys(settings.enabledSkills ?? {})) {
         updatedSkills[key] = false;
@@ -330,16 +313,13 @@ profiles.post("/switch", async (c) => {
         updatedSkills[key] = val;
       }
       updatedSettings.enabledSkills = updatedSkills;
-      updatedSettings.hooks = profile.hooks ?? {};
+      updatedSettings.hooks = profile.hooks;
 
       await writeJsonFile(settingsPath, updatedSettings);
     });
 
     // Step 2: Toggle MCP state in ~/.claude.json (locked separately)
-    if (
-      (profile.enabledMcpServers ?? []).length > 0 ||
-      (profile.disabledMcpServers ?? []).length > 0
-    ) {
+    if (profile.enabledMcpServers.length > 0 || profile.disabledMcpServers.length > 0) {
       await withFileLock(PATHS.claudeJson, async () => {
         const claudeJson = (await readJsonFile<ClaudeJson>(PATHS.claudeJson)) ?? {};
 
@@ -347,13 +327,13 @@ profiles.post("/switch", async (c) => {
           const active = claudeJson.mcpServers ?? {};
           const disabled = claudeJson.disabledMcpServers ?? {};
 
-          for (const name of profile.enabledMcpServers ?? []) {
+          for (const name of profile.enabledMcpServers) {
             if (disabled[name]) {
               active[name] = disabled[name];
               delete disabled[name];
             }
           }
-          for (const name of profile.disabledMcpServers ?? []) {
+          for (const name of profile.disabledMcpServers) {
             if (active[name]) {
               disabled[name] = active[name];
               delete active[name];
@@ -368,10 +348,10 @@ profiles.post("/switch", async (c) => {
 
           const disabledSet = new Set(projEntry.disabledMcpServers ?? []);
 
-          for (const name of profile.enabledMcpServers ?? []) {
+          for (const name of profile.enabledMcpServers) {
             disabledSet.delete(name);
           }
-          for (const name of profile.disabledMcpServers ?? []) {
+          for (const name of profile.disabledMcpServers) {
             disabledSet.add(name);
           }
 
@@ -569,18 +549,20 @@ profiles.put("/:name", async (c) => {
     if (bodyError) return c.json({ error: bodyError }, 400);
 
     return await withFileLock(filePath, async () => {
-      const existing = await readJsonFile<ProfileFile>(filePath);
+      const existing = normalizeProfile(await readJsonFile<unknown>(filePath));
       if (!existing) {
         return c.json({ error: `Profile "${name}" not found` }, 404);
       }
 
-      const updated: ProfileFile = {
+      // Spread first so keys other tools add (skill-scope's skillOverrides) survive.
+      const updated = {
+        ...existing,
         _description: body.description ?? existing._description,
         enabledPlugins: body.plugins ?? existing.enabledPlugins,
-        enabledSkills: body.skills ?? existing.enabledSkills ?? {},
-        hooks: body.hooks ?? existing.hooks ?? {},
-        enabledMcpServers: body.enabledMcpServers ?? existing.enabledMcpServers ?? [],
-        disabledMcpServers: body.disabledMcpServers ?? existing.disabledMcpServers ?? [],
+        enabledSkills: body.skills ?? existing.enabledSkills,
+        hooks: body.hooks ?? existing.hooks,
+        enabledMcpServers: body.enabledMcpServers ?? existing.enabledMcpServers,
+        disabledMcpServers: body.disabledMcpServers ?? existing.disabledMcpServers,
       };
       await writeJsonFile(filePath, updated);
 
