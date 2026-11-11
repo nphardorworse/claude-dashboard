@@ -12,7 +12,7 @@ import type {
  *
  * Unlike jsonl-parser (which builds turn-level usage/cost summaries),
  * this extracts the complete text content of every user prompt, every
- * assistant reply, every tool call, and every tool result — so the
+ * assistant reply, every tool call, and every tool result, so the
  * user can see what was actually said before any compaction happens.
  */
 
@@ -26,7 +26,7 @@ type ContentBlock = {
   summary?: string;
 };
 
-type JsonlEntry = {
+export type JsonlEntry = {
   type?: string;
   timestamp?: string;
   isCompactSummary?: boolean;
@@ -100,94 +100,33 @@ const isToolResultOnly = (content: unknown): boolean => {
   );
 };
 
-/** Returns the most recent custom-title set on the session. Claude Code may emit multiple custom-title entries if the user renames a session; the last one wins. */
-export const extractSessionName = (raw: string): string => {
-  let name = "";
-  let malformed = 0;
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const entry = JSON.parse(trimmed) as JsonlEntry;
-      if (entry.type === "custom-title" && entry.customTitle) {
-        name = entry.customTitle;
-      }
-    } catch {
-      malformed++;
-      continue;
-    }
-  }
-  if (malformed > 0) {
-    console.warn(
-      `[transcript-parser] extractSessionName: dropped ${malformed} malformed JSONL lines`,
-    );
-  }
-  return name;
-};
-
 /**
- * Filter JSONL to keep only conversation-level entries:
+ * True for conversation-level entries kept by conversation-only snapshots:
  * - user entries with actual text (not tool-result-only)
  * - assistant entries with text content (not tool-call-only internals)
  * - summary entries
  * - custom-title entries (metadata)
  */
-export const filterConversationJsonl = (raw: string): string => {
-  const kept: string[] = [];
-  let malformed = 0;
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    let entry: JsonlEntry;
-    try {
-      entry = JSON.parse(trimmed);
-    } catch {
-      malformed++;
-      continue;
-    }
-
-    const t = entry.type;
-
-    // Always keep summaries and custom-title metadata
-    if (t === "summary" || t === "custom-title") {
-      kept.push(trimmed);
-      continue;
-    }
-
-    if (t === "user") {
-      // Skip tool-result-only user entries
-      if (isToolResultOnly(entry.message?.content)) continue;
-      const text = extractText(entry.message?.content);
-      if (text.trim()) {
-        kept.push(trimmed);
-      }
-      continue;
-    }
-
-    if (t === "assistant") {
-      const text = extractText(entry.message?.content);
-      // Only keep assistant entries that have visible text
-      if (text.trim()) {
-        kept.push(trimmed);
-      }
-      continue;
-    }
+export const isConversationEntry = (entry: JsonlEntry): boolean => {
+  const t = entry.type;
+  if (t === "summary" || t === "custom-title") return true;
+  if (t === "user") {
+    if (isToolResultOnly(entry.message?.content)) return false;
+    return extractText(entry.message?.content).trim() !== "";
   }
-  if (malformed > 0) {
-    console.warn(
-      `[transcript-parser] filterConversationJsonl: dropped ${malformed} malformed JSONL lines`,
-    );
+  if (t === "assistant") {
+    return extractText(entry.message?.content).trim() !== "";
   }
-  return kept.join("\n");
+  return false;
 };
 
 /**
  * Incremental transcript builder: feed parsed entries in file order with
- * `add`, then call `finish` once. Lets loadTranscript stream the session file
- * instead of holding it whole (sessions reach 1.5GB, while the text the
+ * `add`, then call `finish` once. Lets callers stream a session file instead
+ * of holding it whole (sessions reach 1.5GB, while the text the
  * viewer keeps is usually under 100MB).
  */
-const createTranscriptBuilder = (sessionId: string, projectPath: string) => {
+export const createTranscriptBuilder = (sessionId: string, projectPath: string) => {
   const entries: TranscriptEntry[] = [];
 
   let startTime = "";
@@ -210,7 +149,7 @@ const createTranscriptBuilder = (sessionId: string, projectPath: string) => {
 
     const entryType = entry.type;
 
-    // Compaction summaries — preserve them so users can see what the
+    // Compaction summaries: preserve them so users can see what the
     // model collapsed the earlier conversation into.
     if (entryType === "summary") {
       const summaryText = entry.summary ?? "";
@@ -232,7 +171,7 @@ const createTranscriptBuilder = (sessionId: string, projectPath: string) => {
     const content = entry.message?.content;
 
     if (entryType === "user") {
-      // User "entries" with only tool_result blocks are tool outputs —
+      // User "entries" with only tool_result blocks are tool outputs:
       // attach them to the preceding assistant entry instead of creating
       // a new user turn.
       if (isToolResultOnly(content)) {
@@ -310,7 +249,7 @@ const createTranscriptBuilder = (sessionId: string, projectPath: string) => {
   return { add, markMalformed, finish };
 };
 
-/** Parse JSONL already held in memory (snapshots, imports). */
+/** Parse JSONL already held in memory (imports, schema 1 snapshots). */
 export const parseTranscriptFromJsonl = (
   raw: string,
   sessionId: string,
@@ -332,6 +271,21 @@ export const parseTranscriptFromJsonl = (
   return builder.finish(Buffer.byteLength(raw, "utf-8"));
 };
 
+/** Stream a JSONL file into a transcript. Throws if the file cannot be read. */
+export const loadTranscriptFromFile = async (
+  filePath: string,
+  sessionId: string,
+  projectPath: string,
+): Promise<TranscriptResponse> => {
+  const { size } = await stat(filePath);
+  const builder = createTranscriptBuilder(sessionId, projectPath);
+  const ok = await forEachJsonlEntry<JsonlEntry>(filePath, builder.add, builder.markMalformed);
+  if (!ok) {
+    throw new Error(`[transcript-parser] failed to read ${filePath}`);
+  }
+  return builder.finish(size);
+};
+
 /** Stream a live session's JSONL into a transcript. Null if the file is missing. */
 export const loadTranscript = async (
   sessionId: string,
@@ -339,20 +293,11 @@ export const loadTranscript = async (
 ): Promise<TranscriptResponse | null> => {
   const filePath = await resolveSessionFilePath(sessionId, projectPath);
   if (!filePath) return null;
-
-  let size: number;
   try {
-    size = (await stat(filePath)).size;
+    return await loadTranscriptFromFile(filePath, sessionId, projectPath);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return null;
-    console.error(`[transcript-parser] loadTranscript failed to stat ${filePath}:`, err);
+    console.error(`[transcript-parser] loadTranscript failed for ${filePath}:`, err);
     throw err;
   }
-
-  const builder = createTranscriptBuilder(sessionId, projectPath);
-  const ok = await forEachJsonlEntry<JsonlEntry>(filePath, builder.add, builder.markMalformed);
-  if (!ok) {
-    throw new Error(`[transcript-parser] loadTranscript failed to read ${filePath}`);
-  }
-  return builder.finish(size);
 };
