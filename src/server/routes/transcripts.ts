@@ -2,7 +2,13 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { readdir, readFile, rename, stat, writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
-import { PATHS, getProjectPath, getProjectSessionsDir, validateProjectPath } from "../lib/paths";
+import {
+  PATHS,
+  getProjectPath,
+  getProjectSessionsDir,
+  resolveSessionFilePath,
+  validateProjectPath,
+} from "../lib/paths";
 import {
   loadTranscript,
   parseTranscriptFromJsonl,
@@ -23,6 +29,7 @@ import type {
  */
 
 const MAX_IMPORT_BYTES = 32 * 1024 * 1024;
+const MAX_SNAPSHOT_SOURCE_BYTES = 200 * 1024 * 1024;
 
 const SNAPSHOT_ID_RE = /^[a-zA-Z0-9_-]+$/;
 const MAX_NOTE_LENGTH = 500;
@@ -102,12 +109,12 @@ transcripts.get("/session/:sessionId", async (c) => {
     }
 
     const projectPath = await getProjectPath(c);
-    const result = await loadTranscript(sessionId, projectPath ?? "");
-    if (!result) {
+    const transcript = await loadTranscript(sessionId, projectPath ?? "");
+    if (!transcript) {
       return c.json({ error: "Session JSONL not found" }, 404);
     }
 
-    return c.json(result.transcript satisfies TranscriptResponse);
+    return c.json(transcript satisfies TranscriptResponse);
   } catch (err) {
     console.error("GET /api/transcripts/session/:sessionId error:", err);
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -145,16 +152,37 @@ transcripts.post("/snapshots", async (c) => {
       note = body.note.slice(0, MAX_NOTE_LENGTH);
     }
 
-    const result = await loadTranscript(body.sessionId, projectPath);
-    if (!result) {
+    const sessionFile = await resolveSessionFilePath(body.sessionId, projectPath);
+    let sourceBytes: number | null = null;
+    if (sessionFile) {
+      try {
+        sourceBytes = (await stat(sessionFile)).size;
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") throw err;
+      }
+    }
+    if (!sessionFile || sourceBytes === null) {
       return c.json({ error: "Session JSONL not found" }, 404);
     }
+    // Snapshots embed the whole session as one JSON string, so a big session
+    // must be held in memory several times over. Refuse instead of OOM-ing.
+    if (sourceBytes > MAX_SNAPSHOT_SOURCE_BYTES) {
+      const mb = (n: number) => Math.round(n / 1024 / 1024);
+      return c.json(
+        {
+          error: `This session is ${mb(sourceBytes)} MB, too large to snapshot (limit ${mb(MAX_SNAPSHOT_SOURCE_BYTES)} MB).`,
+        },
+        413,
+      );
+    }
 
-    const rawToStore = conversationOnly
-      ? filterConversationJsonl(result.raw)
-      : result.raw;
-    const transcript = parseTranscriptFromJsonl(rawToStore, body.sessionId, projectPath);
-    const sessionName = extractSessionName(result.raw);
+    const raw = await readFile(sessionFile, "utf-8");
+    const fullTranscript = parseTranscriptFromJsonl(raw, body.sessionId, projectPath);
+    const rawToStore = conversationOnly ? filterConversationJsonl(raw) : raw;
+    const transcript = conversationOnly
+      ? parseTranscriptFromJsonl(rawToStore, body.sessionId, projectPath)
+      : fullTranscript;
+    const sessionName = extractSessionName(raw);
 
     const createdAt = new Date().toISOString();
     const id = buildSnapshotId(body.sessionId, createdAt);
@@ -163,9 +191,9 @@ transcripts.post("/snapshots", async (c) => {
       id,
       sessionId: body.sessionId,
       sessionName,
-      projectPath: result.transcript.projectPath,
+      projectPath: fullTranscript.projectPath,
       createdAt,
-      sessionStartTime: result.transcript.startTime,
+      sessionStartTime: fullTranscript.startTime,
       entryCount: transcript.entries.length,
       userMessageCount: transcript.totalUserMessages,
       assistantMessageCount: transcript.totalAssistantMessages,

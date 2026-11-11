@@ -9,11 +9,13 @@ import { createInterface } from "readline";
  * 1.5GB, and a few whole-file reads in parallel push the V8 heap past its
  * ~4GB limit and crash the server with OOM.
  *
+ * `onMalformed` is called for each non-empty line that is not valid JSON.
  * Returns false if the file could not be read.
  */
 export const forEachJsonlEntry = async <T>(
   filePath: string,
   onEntry: (entry: T) => void,
+  onMalformed?: () => void,
 ): Promise<boolean> => {
   const rl = createInterface({
     input: createReadStream(filePath, { encoding: "utf-8" }),
@@ -27,6 +29,7 @@ export const forEachJsonlEntry = async <T>(
       try {
         entry = JSON.parse(trimmed);
       } catch {
+        onMalformed?.();
         continue;
       }
       onEntry(entry);

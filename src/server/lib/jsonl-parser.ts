@@ -1,4 +1,4 @@
-import { readFile, stat } from "fs/promises";
+import { stat } from "fs/promises";
 import { resolveSessionFilePath } from "./paths";
 import { forEachJsonlEntry } from "./jsonl-stream";
 import { calculateTurnCost, calculateCostBreakdown } from "./pricing";
@@ -286,7 +286,12 @@ const usageToContextSize = (usage: UsageBlock): number =>
   (usage.cache_creation_input_tokens ?? 0) +
   (usage.cache_read_input_tokens ?? 0);
 
-const buildRawTurns = (lines: string[]): RawTurn[] => {
+/**
+ * Incremental turn builder: feed entries in file order with `add`, then call
+ * `finish` once. Takes entries one at a time so callers can stream the JSONL
+ * instead of holding the whole file in memory.
+ */
+const createTurnBuilder = () => {
   const turns: RawTurn[] = [];
 
   let currentUserPrompt = "";
@@ -356,23 +361,13 @@ const buildRawTurns = (lines: string[]): RawTurn[] => {
     accCacheReadCost = 0;
   };
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    let entry: JsonlEntry;
-    try {
-      entry = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-
+  const add = (entry: JsonlEntry): void => {
     const entryType = entry.type;
 
     if (entryType === "user") {
-      // Skip tool_result entries — these are API-level responses to
+      // Skip tool_result entries: these are API-level responses to
       // tool calls, not actual user prompts
-      if (isToolResultOnly(entry.message?.content)) continue;
+      if (isToolResultOnly(entry.message?.content)) return;
 
       // Flush previous turn if we had assistant data
       if (hasPendingUser && lastUsage) {
@@ -385,7 +380,7 @@ const buildRawTurns = (lines: string[]): RawTurn[] => {
       currentUserTimestamp = entry.timestamp ?? "";
       resetTurn();
       hasPendingUser = true;
-      continue;
+      return;
     }
 
     if (entryType === "assistant" && entry.message) {
@@ -435,14 +430,17 @@ const buildRawTurns = (lines: string[]): RawTurn[] => {
         accModelBreakdown[model].costUSD += entryCost;
       }
     }
-  }
+  };
 
-  // Flush final turn
-  if (hasPendingUser && lastUsage) {
-    flushTurn();
-  }
+  const finish = (): RawTurn[] => {
+    // Flush final turn
+    if (hasPendingUser && lastUsage) {
+      flushTurn();
+    }
+    return turns;
+  };
 
-  return turns;
+  return { add, finish };
 };
 
 // ─── Main parser ───────────────────────────────────────────
@@ -463,32 +461,20 @@ export const parseSessionJsonl = async (
     return null;
   }
 
-  let raw: string;
-  try {
-    raw = await readFile(filePath, "utf-8");
-  } catch {
-    return null;
-  }
-
-  const lines = raw.split("\n");
-  const rawTurns = buildRawTurns(lines);
-
-  if (rawTurns.length === 0) return null;
-
-  // Extract session name from custom-title entries
+  // One streamed pass builds the turns and picks up the latest custom title.
+  const builder = createTurnBuilder();
   let sessionName = "";
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const entry = JSON.parse(trimmed);
-      if (entry.type === "custom-title" && entry.customTitle) {
-        sessionName = entry.customTitle;
-      }
-    } catch {
-      continue;
+  const ok = await forEachJsonlEntry<JsonlEntry & { customTitle?: string }>(filePath, (entry) => {
+    if (entry.type === "custom-title" && entry.customTitle) {
+      sessionName = entry.customTitle;
+      return;
     }
-  }
+    builder.add(entry);
+  });
+  if (!ok) return null;
+
+  const rawTurns = builder.finish();
+  if (rawTurns.length === 0) return null;
 
   const turns: TurnUsage[] = [];
   const modelBreakdown: Record<

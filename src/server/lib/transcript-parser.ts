@@ -1,5 +1,6 @@
-import { readFile } from "fs/promises";
+import { stat } from "fs/promises";
 import { resolveSessionFilePath } from "./paths";
+import { forEachJsonlEntry } from "./jsonl-stream";
 import type {
   TranscriptEntry,
   TranscriptEntryRole,
@@ -180,13 +181,14 @@ export const filterConversationJsonl = (raw: string): string => {
   return kept.join("\n");
 };
 
-export const parseTranscriptFromJsonl = (
-  raw: string,
-  sessionId: string,
-  projectPath: string,
-): TranscriptResponse => {
+/**
+ * Incremental transcript builder: feed parsed entries in file order with
+ * `add`, then call `finish` once. Lets loadTranscript stream the session file
+ * instead of holding it whole (sessions reach 1.5GB, while the text the
+ * viewer keeps is usually under 100MB).
+ */
+const createTranscriptBuilder = (sessionId: string, projectPath: string) => {
   const entries: TranscriptEntry[] = [];
-  const lines = raw.split("\n");
 
   let startTime = "";
   let endTime = "";
@@ -196,18 +198,11 @@ export const parseTranscriptFromJsonl = (
   let malformed = 0;
   let orphanToolResults = 0;
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+  const markMalformed = (): void => {
+    malformed++;
+  };
 
-    let entry: JsonlEntry;
-    try {
-      entry = JSON.parse(trimmed);
-    } catch {
-      malformed++;
-      continue;
-    }
-
+  const add = (entry: JsonlEntry): void => {
     if (entry.timestamp) {
       if (!startTime) startTime = entry.timestamp;
       endTime = entry.timestamp;
@@ -229,10 +224,10 @@ export const parseTranscriptFromJsonl = (
           toolResults: [],
         });
       }
-      continue;
+      return;
     }
 
-    if (entryType !== "user" && entryType !== "assistant") continue;
+    if (entryType !== "user" && entryType !== "assistant") return;
 
     const content = entry.message?.content;
 
@@ -250,11 +245,11 @@ export const parseTranscriptFromJsonl = (
             orphanToolResults += results.length;
           }
         }
-        continue;
+        return;
       }
 
       const text = extractText(content);
-      if (!text && !Array.isArray(content)) continue;
+      if (!text && !Array.isArray(content)) return;
 
       userCount += 1;
       const role: TranscriptEntryRole = entry.isCompactSummary
@@ -269,7 +264,7 @@ export const parseTranscriptFromJsonl = (
         toolUses: [],
         toolResults: [],
       });
-      continue;
+      return;
     }
 
     // assistant
@@ -286,54 +281,78 @@ export const parseTranscriptFromJsonl = (
       toolResults: [],
       model: entry.message?.model,
     });
-  }
-
-  if (malformed > 0) {
-    console.warn(
-      `[transcript-parser] parseTranscriptFromJsonl: dropped ${malformed} malformed JSONL lines (sessionId=${sessionId})`,
-    );
-  }
-  if (orphanToolResults > 0) {
-    console.warn(
-      `[transcript-parser] parseTranscriptFromJsonl: dropped ${orphanToolResults} orphan tool_result blocks with no preceding assistant entry (sessionId=${sessionId})`,
-    );
-  }
-
-  return {
-    sessionId,
-    projectPath,
-    startTime,
-    endTime,
-    entries,
-    totalUserMessages: userCount,
-    totalAssistantMessages: assistantCount,
-    rawBytes: Buffer.byteLength(raw, "utf-8"),
   };
+
+  const finish = (rawBytes: number): TranscriptResponse => {
+    if (malformed > 0) {
+      console.warn(
+        `[transcript-parser] dropped ${malformed} malformed JSONL lines (sessionId=${sessionId})`,
+      );
+    }
+    if (orphanToolResults > 0) {
+      console.warn(
+        `[transcript-parser] dropped ${orphanToolResults} orphan tool_result blocks with no preceding assistant entry (sessionId=${sessionId})`,
+      );
+    }
+
+    return {
+      sessionId,
+      projectPath,
+      startTime,
+      endTime,
+      entries,
+      totalUserMessages: userCount,
+      totalAssistantMessages: assistantCount,
+      rawBytes,
+    };
+  };
+
+  return { add, markMalformed, finish };
 };
 
+/** Parse JSONL already held in memory (snapshots, imports). */
+export const parseTranscriptFromJsonl = (
+  raw: string,
+  sessionId: string,
+  projectPath: string,
+): TranscriptResponse => {
+  const builder = createTranscriptBuilder(sessionId, projectPath);
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let entry: JsonlEntry;
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      builder.markMalformed();
+      continue;
+    }
+    builder.add(entry);
+  }
+  return builder.finish(Buffer.byteLength(raw, "utf-8"));
+};
+
+/** Stream a live session's JSONL into a transcript. Null if the file is missing. */
 export const loadTranscript = async (
   sessionId: string,
   projectPath: string,
-): Promise<{ transcript: TranscriptResponse; raw: string } | null> => {
+): Promise<TranscriptResponse | null> => {
   const filePath = await resolveSessionFilePath(sessionId, projectPath);
   if (!filePath) return null;
 
-  let raw: string;
+  let size: number;
   try {
-    raw = await readFile(filePath, "utf-8");
+    size = (await stat(filePath)).size;
   } catch (err: unknown) {
-    if (
-      err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
-      return null;
-    }
-    console.error(`[transcript-parser] loadTranscript failed to read ${filePath}:`, err);
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return null;
+    console.error(`[transcript-parser] loadTranscript failed to stat ${filePath}:`, err);
     throw err;
   }
 
-  const transcript = parseTranscriptFromJsonl(raw, sessionId, projectPath);
-  return { transcript, raw };
+  const builder = createTranscriptBuilder(sessionId, projectPath);
+  const ok = await forEachJsonlEntry<JsonlEntry>(filePath, builder.add, builder.markMalformed);
+  if (!ok) {
+    throw new Error(`[transcript-parser] loadTranscript failed to read ${filePath}`);
+  }
+  return builder.finish(size);
 };
