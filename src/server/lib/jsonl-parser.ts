@@ -1,5 +1,6 @@
 import { readFile, stat } from "fs/promises";
 import { resolveSessionFilePath } from "./paths";
+import { forEachJsonlEntry } from "./jsonl-stream";
 import { calculateTurnCost, calculateCostBreakdown } from "./pricing";
 import type { TurnUsage, SessionAnalysis } from "../../shared/types";
 
@@ -48,9 +49,55 @@ type ParsedFileCache = { entries: CompactEntry[]; mtimeMs: number; size: number 
 // that actually span a window boundary (a handful), so memory stays small.
 const fileEntryCache = new Map<string, ParsedFileCache>();
 
+// Parses currently running, keyed by path. /usage/windowed aggregates the 5h
+// and 7d windows in parallel, and a long session spans both boundaries, so
+// without this the same multi-GB file gets parsed twice at once.
+const inFlightParses = new Map<string, Promise<CompactEntry[] | null>>();
+
+type CompactSourceEntry = {
+  type?: string;
+  timestamp?: string;
+  message?: { model?: string; content?: unknown; usage?: UsageBlock };
+};
+
+const parseCompactEntries = async (filePath: string): Promise<CompactEntry[] | null> => {
+  const entries: CompactEntry[] = [];
+  const ok = await forEachJsonlEntry<CompactSourceEntry>(filePath, (entry) => {
+    // Match the original semantics exactly: missing timestamp → 0 (always
+    // before cutoff), malformed → NaN (NaN < cutoff is false → counted).
+    const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : 0;
+
+    if (entry.type === "user") {
+      // Skip tool_result entries, only count real user prompts
+      if (!isToolResultContent(entry.message?.content)) {
+        entries.push({ ts, kind: 0, model: "", hasUsage: false, input: 0, output: 0, cacheCreate: 0, cacheRead: 0 });
+      }
+      return;
+    }
+
+    if (entry.type === "assistant") {
+      const model = entry.message?.model ?? "";
+      const usage = entry.message?.usage;
+      if (!model && !usage) return; // contributes nothing to any cutoff
+      entries.push({
+        ts,
+        kind: 1,
+        model,
+        hasUsage: !!usage,
+        input: usage?.input_tokens ?? 0,
+        output: usage?.output_tokens ?? 0,
+        cacheCreate: usage?.cache_creation_input_tokens ?? 0,
+        cacheRead: usage?.cache_read_input_tokens ?? 0,
+      });
+    }
+  });
+  return ok ? entries : null;
+};
+
 /**
  * Parse a session JSONL into compact entries, memoized by mtime+size.
- * Returns null if the file is missing/unreadable.
+ * Streams the file (see {@link forEachJsonlEntry}) and coalesces concurrent
+ * callers onto one parse. Returns null if the file is missing/unreadable.
  */
 const getCompactEntries = async (filePath: string): Promise<CompactEntry[] | null> => {
   let fileStat;
@@ -65,60 +112,19 @@ const getCompactEntries = async (filePath: string): Promise<CompactEntry[] | nul
     return cached.entries;
   }
 
-  let raw: string;
-  try {
-    raw = await readFile(filePath, "utf-8");
-  } catch {
-    return null;
-  }
+  const running = inFlightParses.get(filePath);
+  if (running) return running;
 
-  const entries: CompactEntry[] = [];
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    let entry: {
-      type?: string;
-      timestamp?: string;
-      message?: { model?: string; content?: unknown; usage?: UsageBlock };
-    };
-    try {
-      entry = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-
-    // Match the original semantics exactly: missing timestamp → 0 (always
-    // before cutoff), malformed → NaN (NaN < cutoff is false → counted).
-    const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : 0;
-
-    if (entry.type === "user") {
-      // Skip tool_result entries — only count real user prompts
-      if (!isToolResultContent(entry.message?.content)) {
-        entries.push({ ts, kind: 0, model: "", hasUsage: false, input: 0, output: 0, cacheCreate: 0, cacheRead: 0 });
+  const parse = parseCompactEntries(filePath)
+    .then((entries) => {
+      if (entries) {
+        fileEntryCache.set(filePath, { entries, mtimeMs: fileStat.mtimeMs, size: fileStat.size });
       }
-      continue;
-    }
-
-    if (entry.type === "assistant") {
-      const model = entry.message?.model ?? "";
-      const usage = entry.message?.usage;
-      if (!model && !usage) continue; // contributes nothing to any cutoff
-      entries.push({
-        ts,
-        kind: 1,
-        model,
-        hasUsage: !!usage,
-        input: usage?.input_tokens ?? 0,
-        output: usage?.output_tokens ?? 0,
-        cacheCreate: usage?.cache_creation_input_tokens ?? 0,
-        cacheRead: usage?.cache_read_input_tokens ?? 0,
-      });
-    }
-  }
-
-  fileEntryCache.set(filePath, { entries, mtimeMs: fileStat.mtimeMs, size: fileStat.size });
-  return entries;
+      return entries;
+    })
+    .finally(() => inFlightParses.delete(filePath));
+  inFlightParses.set(filePath, parse);
+  return parse;
 };
 
 /**

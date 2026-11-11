@@ -1,10 +1,9 @@
 import { readdir, stat } from "fs/promises";
-import { createReadStream } from "fs";
-import { createInterface } from "readline";
 import { join, basename, resolve } from "path";
 import { PATHS, getProjectSessionsDir, loadKnownProjects } from "./paths";
 import { readJsonFile } from "./file-io";
 import { calculateTurnCost } from "./pricing";
+import { forEachJsonlEntry } from "./jsonl-stream";
 import type { SessionMeta } from "../../shared/types";
 
 export type { SessionMeta };
@@ -159,39 +158,6 @@ const extractFirstUserText = (content: unknown): string => {
   return "";
 };
 
-// Stream a .jsonl file line-by-line, invoking `onEntry` for each parsed JSON
-// line. Bounds memory to a single line regardless of file size — some
-// transcripts exceed 300MB, and reading them whole (readFile + split) grew the
-// V8 heap past its limit (~4.5GB) and crashed the server with OOM. Returns
-// false if the file could not be read.
-const forEachJsonlEntry = async (
-  filePath: string,
-  onEntry: (entry: JsonlEntry) => void
-): Promise<boolean> => {
-  const rl = createInterface({
-    input: createReadStream(filePath, { encoding: "utf-8" }),
-    crlfDelay: Infinity,
-  });
-  try {
-    for await (const line of rl) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      let entry: JsonlEntry;
-      try {
-        entry = JSON.parse(trimmed);
-      } catch {
-        continue;
-      }
-      onEntry(entry);
-    }
-    return true;
-  } catch {
-    return false;
-  } finally {
-    rl.close();
-  }
-};
-
 const parseJsonlForMeta = async (
   filePath: string,
   projectPath: string
@@ -215,7 +181,7 @@ const parseJsonlForMeta = async (
   let usesWebSearch = false;
   let usesTaskAgent = false;
 
-  const ok = await forEachJsonlEntry(filePath, (entry) => {
+  const ok = await forEachJsonlEntry<JsonlEntry>(filePath, (entry) => {
     // Capture sessionId, startTime, and session name
     if (!sessionId && entry.sessionId) {
       sessionId = entry.sessionId;
@@ -412,7 +378,7 @@ const computeCostFromJsonl = async (filePath: string): Promise<number | null> =>
   let costUSD = 0;
   let currentModel = "";
 
-  const ok = await forEachJsonlEntry(filePath, (entry) => {
+  const ok = await forEachJsonlEntry<JsonlEntry>(filePath, (entry) => {
     if (entry.type === "assistant") {
       if (entry.message?.model) currentModel = entry.message.model;
       const usage = entry.message?.usage;
