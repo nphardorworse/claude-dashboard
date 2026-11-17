@@ -3,7 +3,7 @@ import { join, basename, resolve } from "path";
 import { PATHS, getProjectSessionsDirs, listSubagentFiles, loadKnownProjects } from "./paths";
 import { createApiCallFilter } from "./api-call";
 import { readJsonFile } from "./file-io";
-import { calculateTurnCost } from "./pricing";
+import { calculateTurnCost, oneHourCacheWrites } from "./pricing";
 import { forEachJsonlEntry } from "./jsonl-stream";
 import type { SessionMeta } from "../../shared/types";
 
@@ -140,6 +140,7 @@ type JsonlEntry = {
       output_tokens?: number;
       cache_creation_input_tokens?: number;
       cache_read_input_tokens?: number;
+      cache_creation?: { ephemeral_1h_input_tokens?: number };
     };
   };
 };
@@ -237,7 +238,8 @@ const parseJsonlForMeta = async (
         cacheCreationTokens += turnCacheCreate;
         cacheReadTokens += turnCacheRead;
         costUSD += calculateTurnCost(
-          lastModelUsed || "sonnet", turnInput, turnOutput, turnCacheCreate, turnCacheRead
+          lastModelUsed || "sonnet", turnInput, turnOutput, turnCacheCreate, turnCacheRead,
+          oneHourCacheWrites(usage),
         );
       }
 
@@ -449,7 +451,9 @@ const parseFileUsage = async (filePath: string): Promise<UsageSum | null> => {
     sum.outputTokens += output;
     sum.cacheCreationTokens += cacheCreate;
     sum.cacheReadTokens += cacheRead;
-    sum.costUSD += calculateTurnCost(currentModel || "sonnet", input, output, cacheCreate, cacheRead);
+    sum.costUSD += calculateTurnCost(
+      currentModel || "sonnet", input, output, cacheCreate, cacheRead, oneHourCacheWrites(usage),
+    );
   });
 
   return ok ? sum : null;

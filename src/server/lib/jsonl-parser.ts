@@ -2,7 +2,7 @@ import { stat } from "fs/promises";
 import { listSubagentFiles, resolveSessionFilePath } from "./paths";
 import { createApiCallFilter } from "./api-call";
 import { forEachJsonlEntry } from "./jsonl-stream";
-import { calculateTurnCost, calculateCostBreakdown } from "./pricing";
+import { calculateTurnCost, calculateCostBreakdown, oneHourCacheWrites } from "./pricing";
 import type { TurnUsage, SessionAnalysis } from "../../shared/types";
 
 type UsageBlock = {
@@ -10,6 +10,7 @@ type UsageBlock = {
   output_tokens?: number;
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
+  cache_creation?: { ephemeral_1h_input_tokens?: number };
 };
 
 const CACHE_TTL_MS = 30_000;
@@ -23,6 +24,8 @@ type WindowedUsage = {
   inputTokens: number;
   outputTokens: number;
   cacheCreationTokens: number;
+  /** Part of cacheCreationTokens written to the 1-hour cache. */
+  cacheWrite1hTokens: number;
   cacheReadTokens: number;
   lastModel: string;
 };
@@ -41,6 +44,7 @@ type CompactEntry = {
   input: number;
   output: number;
   cacheCreate: number;
+  cacheCreate1h: number;
   cacheRead: number;
 };
 
@@ -74,7 +78,7 @@ const parseCompactEntries = async (filePath: string): Promise<CompactEntry[] | n
     if (entry.type === "user") {
       // Skip tool_result entries, only count real user prompts
       if (!isToolResultContent(entry.message?.content)) {
-        entries.push({ ts, kind: 0, model: "", hasUsage: false, input: 0, output: 0, cacheCreate: 0, cacheRead: 0 });
+        entries.push({ ts, kind: 0, model: "", hasUsage: false, input: 0, output: 0, cacheCreate: 0, cacheCreate1h: 0, cacheRead: 0 });
       }
       return;
     }
@@ -92,6 +96,7 @@ const parseCompactEntries = async (filePath: string): Promise<CompactEntry[] | n
         input: usage?.input_tokens ?? 0,
         output: usage?.output_tokens ?? 0,
         cacheCreate: usage?.cache_creation_input_tokens ?? 0,
+        cacheCreate1h: oneHourCacheWrites(usage),
         cacheRead: usage?.cache_read_input_tokens ?? 0,
       });
     }
@@ -150,7 +155,7 @@ export const sumUsageAfterCutoff = async (
   projectPath: string,
   cutoffMs: number,
 ): Promise<WindowedUsage> => {
-  const empty: WindowedUsage = { messages: 0, inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, lastModel: "" };
+  const empty: WindowedUsage = { messages: 0, inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheWrite1hTokens: 0, cacheReadTokens: 0, lastModel: "" };
   const filePath = await resolveSessionFilePath(sessionId, projectPath);
   if (!filePath) return empty;
 
@@ -168,6 +173,7 @@ export const sumUsageAfterCutoff = async (
   let inputTokens = 0;
   let outputTokens = 0;
   let cacheCreationTokens = 0;
+  let cacheWrite1hTokens = 0;
   let cacheReadTokens = 0;
   let lastModel = "";
 
@@ -185,6 +191,7 @@ export const sumUsageAfterCutoff = async (
       inputTokens += e.input;
       outputTokens += e.output;
       cacheCreationTokens += e.cacheCreate;
+      cacheWrite1hTokens += e.cacheCreate1h;
       cacheReadTokens += e.cacheRead;
     }
   }
@@ -195,11 +202,12 @@ export const sumUsageAfterCutoff = async (
       inputTokens += e.input;
       outputTokens += e.output;
       cacheCreationTokens += e.cacheCreate;
+      cacheWrite1hTokens += e.cacheCreate1h;
       cacheReadTokens += e.cacheRead;
     }
   }
 
-  return { messages, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, lastModel };
+  return { messages, inputTokens, outputTokens, cacheCreationTokens, cacheWrite1hTokens, cacheReadTokens, lastModel };
 };
 
 /** Check if a user entry's content is purely tool_result blocks (not a real prompt). */
@@ -436,15 +444,16 @@ const createTurnBuilder = () => {
         const turnOutput = msg.usage.output_tokens ?? 0;
         const turnCacheCreate = msg.usage.cache_creation_input_tokens ?? 0;
         const turnCacheRead = msg.usage.cache_read_input_tokens ?? 0;
+        const turnCacheWrite1h = oneHourCacheWrites(msg.usage);
         accInputTokens += turnInput;
         accOutputTokens += turnOutput;
         accCacheCreation += turnCacheCreate;
         accCacheRead += turnCacheRead;
-        const entryCost = calculateTurnCost(model, turnInput, turnOutput, turnCacheCreate, turnCacheRead);
+        const entryCost = calculateTurnCost(model, turnInput, turnOutput, turnCacheCreate, turnCacheRead, turnCacheWrite1h);
         accCost += entryCost;
 
         apiCallCount += 1;
-        const breakdown = calculateCostBreakdown(model, turnInput, turnOutput, turnCacheCreate, turnCacheRead);
+        const breakdown = calculateCostBreakdown(model, turnInput, turnOutput, turnCacheCreate, turnCacheRead, turnCacheWrite1h);
         accInputCost += breakdown.inputCostUSD;
         accOutputCost += breakdown.outputCostUSD;
         accCacheWriteCost += breakdown.cacheWriteCostUSD;

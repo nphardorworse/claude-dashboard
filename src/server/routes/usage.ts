@@ -138,7 +138,8 @@ const aggregateWindow = async (
           existing.costUSD += calculateTurnCost(
             usage.lastModel || "sonnet",
             usage.inputTokens, usage.outputTokens,
-            usage.cacheCreationTokens, usage.cacheReadTokens
+            usage.cacheCreationTokens, usage.cacheReadTokens,
+            usage.cacheWrite1hTokens,
           );
         })
       );
