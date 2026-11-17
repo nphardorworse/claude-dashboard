@@ -1,7 +1,8 @@
 import { homedir } from "os";
 import { join, resolve, isAbsolute } from "path";
 import type { Context } from "hono";
-import { open, readFile, readdir, stat } from "fs/promises";
+import { readFile, readdir, stat } from "fs/promises";
+import { readJsonlLines } from "./jsonl-stream";
 
 const CLAUDE_DIR = join(homedir(), ".claude");
 
@@ -10,9 +11,10 @@ let knownProjectsCache: Set<string> | null = null;
 let knownProjectsCacheTime = 0;
 const KNOWN_PROJECTS_TTL_MS = 30_000;
 
-// Reverse map: resolved project path → actual directory path on disk
-// Populated during loadKnownProjects Source 3
-const projectDirMap = new Map<string, string>();
+// Reverse map: resolved project path → its session dirs on disk, the dir
+// named after the path first. One project can own several dirs (a worktree
+// launched from the repo root, a renamed path). Populated by Source 3.
+const projectDirMap = new Map<string, string[]>();
 
 // Session file index: sessionId → absolute file path
 // Populated lazily by scanning ~/.claude/projects/
@@ -25,22 +27,76 @@ const SESSION_INDEX_TTL_MS = 30_000;
 // sweep over all ~/.claude/projects dirs at the same time.
 let knownProjectsInFlight: Promise<Set<string>> | null = null;
 
-// Characters of each project dir's first JSONL searched for a `cwd` line.
-const PROJECT_DIR_HEAD_CHARS = 2000;
-// 4 bytes per char covers the worst case of UTF-8, so this always decodes to
-// at least PROJECT_DIR_HEAD_CHARS characters when the file is long enough.
-const PROJECT_DIR_HEAD_BYTES = PROJECT_DIR_HEAD_CHARS * 4;
+/**
+ * The session dir name Claude Code uses for a project path: every character
+ * that is not an ASCII letter or digit becomes "-" (so "/Users/a/.x y" and
+ * "C:\\a\\b" map to "-Users-a--x-y" and "C--a-b").
+ */
+export const toSessionDirName = (projectPath: string): string =>
+  projectPath.replace(/[^a-zA-Z0-9]/g, "-");
 
-/** Read the first `bytes` of a file as UTF-8 without loading the rest. */
-const readFileHead = async (filePath: string, bytes: number): Promise<string> => {
-  const fh = await open(filePath, "r");
+// Lines searched for a `cwd` before giving up on a file. In real transcripts
+// the first cwd sits on line 3 to 10, after title and queue entries.
+const FIRST_CWD_MAX_LINES = 100;
+
+// First absolute cwd found in each transcript, keyed by file path. Transcripts
+// are append-only, so a found cwd never changes; a miss is retried once the
+// file has grown.
+const firstCwdCache = new Map<string, { cwd: string | null; size: number }>();
+
+/**
+ * The first absolute `cwd` in a transcript, streamed line by line. Never a
+ * fixed-size head: the line holding the first cwd is often a SessionStart
+ * hook entry several KB long, so a 2000-char head missed it for most dirs.
+ */
+const readFirstCwd = async (filePath: string): Promise<string | null> => {
+  let size: number;
   try {
-    const buf = Buffer.alloc(bytes);
-    const { bytesRead } = await fh.read(buf, 0, bytes, 0);
-    return buf.toString("utf-8", 0, bytesRead);
-  } finally {
-    await fh.close();
+    size = (await stat(filePath)).size;
+  } catch {
+    return null;
   }
+  const cached = firstCwdCache.get(filePath);
+  if (cached && (cached.cwd !== null || cached.size === size)) return cached.cwd;
+
+  let cwd: string | null = null;
+  try {
+    let lines = 0;
+    for await (const line of readJsonlLines(filePath)) {
+      if (++lines > FIRST_CWD_MAX_LINES) break;
+      // Skip the parse on lines that cannot hold a cwd.
+      if (!line.includes('"cwd"')) continue;
+      try {
+        const parsed = JSON.parse(line);
+        if (typeof parsed.cwd === "string" && isAbsolute(parsed.cwd)) {
+          cwd = resolve(parsed.cwd);
+          break;
+        }
+      } catch { continue; }
+    }
+  } catch {
+    return null;
+  }
+  firstCwdCache.set(filePath, { cwd, size });
+  return cwd;
+};
+
+/**
+ * The project a session dir belongs to. Claude Code names the dir after the
+ * cwd the session was launched in, but a file's own first cwd can differ (a
+ * scratch session moved into a project, a worktree started from the repo
+ * root). So prefer a cwd whose dir name matches this dir, and fall back to the
+ * first cwd found. Reads one file in the common case.
+ */
+export const resolveDirProject = async (dirPath: string, dirName: string, files: string[]): Promise<string | null> => {
+  let fallback: string | null = null;
+  for (const file of files) {
+    const cwd = await readFirstCwd(join(dirPath, file));
+    if (!cwd) continue;
+    if (toSessionDirName(cwd) === dirName) return cwd;
+    fallback ??= cwd;
+  }
+  return fallback;
 };
 
 export const loadKnownProjects = async (): Promise<Set<string>> => {
@@ -59,9 +115,9 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
 const scanKnownProjects = async (): Promise<Set<string>> => {
   const now = Date.now();
   const projects = new Set<string>();
-  // Built aside and swapped in at the end, so getProjectSessionsDir never
+  // Built aside and swapped in at the end, so getProjectSessionsDirs never
   // sees a half-filled map while a refresh is running.
-  const nextProjectDirMap = new Map<string, string>();
+  const nextProjectDirMap = new Map<string, string[]>();
 
   // Source 1: ~/.claude.json projects map
   try {
@@ -110,34 +166,30 @@ const scanKnownProjects = async (): Promise<Set<string>> => {
     }
   }
 
-  // Source 3: ~/.claude/projects/ dirs (read cwd from the head of the first
-  // JSONL). Only the head: these files reach 1.5GB, and reading them whole
-  // here took ~1.8GB of reads per sweep and pushed the heap toward OOM.
+  // Source 3: ~/.claude/projects/ dirs. Every dir that holds a transcript is
+  // mapped to a project, so the session scanner reaches every session file.
   try {
     const projectsDir = join(CLAUDE_DIR, "projects");
     const entries = await readdir(projectsDir);
+    const seenFiles = new Set<string>();
     for (const entry of entries) {
       if (entry === ".DS_Store" || entry === "-") continue;
       try {
         const dirPath = join(projectsDir, entry);
-        const dirFiles = await readdir(dirPath);
-        const firstJsonl = dirFiles.find((f) => f.endsWith(".jsonl"));
-        if (!firstJsonl) continue;
-        const head = await readFileHead(join(dirPath, firstJsonl), PROJECT_DIR_HEAD_BYTES);
-        const lines = head.slice(0, PROJECT_DIR_HEAD_CHARS).split("\n");
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const parsed = JSON.parse(line.trim());
-            if (parsed.cwd && typeof parsed.cwd === "string" && isAbsolute(parsed.cwd)) {
-              const resolvedCwd = resolve(parsed.cwd);
-              projects.add(resolvedCwd);
-              nextProjectDirMap.set(resolvedCwd, dirPath);
-              break;
-            }
-          } catch { continue; }
-        }
+        const jsonlFiles = (await readdir(dirPath)).filter((f) => f.endsWith(".jsonl"));
+        for (const f of jsonlFiles) seenFiles.add(join(dirPath, f));
+        const projectPath = await resolveDirProject(dirPath, entry, jsonlFiles);
+        if (!projectPath) continue;
+        projects.add(projectPath);
+        const dirs = nextProjectDirMap.get(projectPath) ?? [];
+        // The dir named after the path is the primary one (new sessions go there).
+        if (entry === toSessionDirName(projectPath)) dirs.unshift(dirPath);
+        else dirs.push(dirPath);
+        nextProjectDirMap.set(projectPath, dirs);
       } catch { continue; }
+    }
+    for (const file of firstCwdCache.keys()) {
+      if (!seenFiles.has(file)) firstCwdCache.delete(file);
     }
   } catch (err: unknown) {
     if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
@@ -198,14 +250,17 @@ export const getMcpJsonPath = (projectPath?: string): string => {
   return join(projectPath, ".mcp.json");
 };
 
-export const getProjectSessionsDir = (projectPath: string): string => {
-  // Use the actual directory discovered from disk if available
-  const mapped = projectDirMap.get(projectPath);
-  if (mapped) return mapped;
-  // Fallback: compute key from path
-  const key = projectPath.split(/[/\\]/).join("-");
-  return join(PATHS.claudeDir, "projects", key);
-};
+/**
+ * Every session dir of a project, primary first. Projects with no dir on disk
+ * yet get the dir Claude Code would create for them.
+ */
+export const getProjectSessionsDirs = (projectPath: string): string[] =>
+  projectDirMap.get(projectPath) ??
+  [join(PATHS.claudeDir, "projects", toSessionDirName(projectPath))];
+
+/** The dir new sessions of a project are written to (see getProjectSessionsDirs). */
+export const getProjectSessionsDir = (projectPath: string): string =>
+  getProjectSessionsDirs(projectPath)[0];
 
 /**
  * Build/refresh an index of sessionId → absolute JSONL file path by

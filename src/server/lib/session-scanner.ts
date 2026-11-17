@@ -1,6 +1,6 @@
 import { readdir, stat } from "fs/promises";
 import { join, basename, resolve } from "path";
-import { PATHS, getProjectSessionsDir, loadKnownProjects } from "./paths";
+import { PATHS, getProjectSessionsDirs, loadKnownProjects } from "./paths";
 import { readJsonFile } from "./file-io";
 import { calculateTurnCost } from "./pricing";
 import { forEachJsonlEntry } from "./jsonl-stream";
@@ -350,30 +350,28 @@ const scanProjectJsonlSessions = async (
   projectPath: string,
   excludeIds: Set<string>
 ): Promise<SessionMeta[]> => {
-  const dir = getProjectSessionsDir(projectPath);
-
-  let files: string[];
-  try {
-    files = await readdir(dir);
-  } catch {
-    return [];
+  // A project can own several session dirs (see getProjectSessionsDirs).
+  const filePaths: string[] = [];
+  for (const dir of getProjectSessionsDirs(projectPath)) {
+    try {
+      for (const f of await readdir(dir)) {
+        if (f.endsWith(".jsonl")) filePaths.push(join(dir, f));
+      }
+    } catch { /* dir doesn't exist */ }
   }
 
-  const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
   const results: SessionMeta[] = [];
 
   // Process in parallel batches of 10 to avoid overwhelming I/O
   const BATCH_SIZE = 10;
-  for (let i = 0; i < jsonlFiles.length; i += BATCH_SIZE) {
-    const batch = jsonlFiles.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
+    const batch = filePaths.slice(i, i + BATCH_SIZE);
     const batchResults = await Promise.all(
-      batch.map(async (file) => {
-        const sessionId = basename(file, ".jsonl");
+      batch.map(async (filePath) => {
+        const sessionId = basename(filePath, ".jsonl");
 
         // Skip if already covered by session-meta
         if (excludeIds.has(sessionId)) return null;
-
-        const filePath = join(dir, file);
 
         // Check cache by mtime + size
         let fileStat;
@@ -383,7 +381,7 @@ const scanProjectJsonlSessions = async (
           return null;
         }
 
-        const cached = jsonlCache.get(sessionId);
+        const cached = jsonlCache.get(filePath);
         if (
           cached &&
           cached.mtimeMs === fileStat.mtimeMs &&
@@ -395,7 +393,7 @@ const scanProjectJsonlSessions = async (
         return sharedFileScan(`meta\0${projectPath}\0${filePath}`, async () => {
           const meta = await parseJsonlForMeta(filePath, projectPath);
           if (meta) {
-            jsonlCache.set(sessionId, {
+            jsonlCache.set(filePath, {
               result: meta,
               mtimeMs: fileStat.mtimeMs,
               size: fileStat.size,
@@ -450,9 +448,13 @@ const enrichMetaSessionCosts = async (
   const toEnrich: Array<{ session: SessionMeta; filePath: string }> = [];
 
   for (const session of metaSessions) {
-    const dir = getProjectSessionsDir(session.projectPath);
-    const filePath = join(dir, `${session.sessionId}.jsonl`);
-    toEnrich.push({ session, filePath });
+    for (const dir of getProjectSessionsDirs(session.projectPath)) {
+      const filePath = join(dir, `${session.sessionId}.jsonl`);
+      if (await stat(filePath).then(() => true, () => false)) {
+        toEnrich.push({ session, filePath });
+        break;
+      }
+    }
   }
 
   for (let i = 0; i < toEnrich.length; i += BATCH_SIZE) {
