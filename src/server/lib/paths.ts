@@ -1,7 +1,7 @@
 import { homedir } from "os";
 import { join, resolve, isAbsolute } from "path";
 import type { Context } from "hono";
-import { readFile, readdir, stat } from "fs/promises";
+import { open, readFile, readdir, stat } from "fs/promises";
 
 const CLAUDE_DIR = join(homedir(), ".claude");
 
@@ -20,13 +20,48 @@ let sessionFileIndex: Map<string, string> | null = null;
 let sessionFileIndexTime = 0;
 const SESSION_INDEX_TTL_MS = 30_000;
 
+// Coalesces concurrent refreshes. Nearly every request goes through
+// validateProjectPath, so without this a burst of requests each ran its own
+// sweep over all ~/.claude/projects dirs at the same time.
+let knownProjectsInFlight: Promise<Set<string>> | null = null;
+
+// Characters of each project dir's first JSONL searched for a `cwd` line.
+const PROJECT_DIR_HEAD_CHARS = 2000;
+// 4 bytes per char covers the worst case of UTF-8, so this always decodes to
+// at least PROJECT_DIR_HEAD_CHARS characters when the file is long enough.
+const PROJECT_DIR_HEAD_BYTES = PROJECT_DIR_HEAD_CHARS * 4;
+
+/** Read the first `bytes` of a file as UTF-8 without loading the rest. */
+const readFileHead = async (filePath: string, bytes: number): Promise<string> => {
+  const fh = await open(filePath, "r");
+  try {
+    const buf = Buffer.alloc(bytes);
+    const { bytesRead } = await fh.read(buf, 0, bytes, 0);
+    return buf.toString("utf-8", 0, bytesRead);
+  } finally {
+    await fh.close();
+  }
+};
+
 export const loadKnownProjects = async (): Promise<Set<string>> => {
   const now = Date.now();
   if (knownProjectsCache && now - knownProjectsCacheTime < KNOWN_PROJECTS_TTL_MS) {
     return knownProjectsCache;
   }
+  if (knownProjectsInFlight) return knownProjectsInFlight;
 
+  knownProjectsInFlight = scanKnownProjects().finally(() => {
+    knownProjectsInFlight = null;
+  });
+  return knownProjectsInFlight;
+};
+
+const scanKnownProjects = async (): Promise<Set<string>> => {
+  const now = Date.now();
   const projects = new Set<string>();
+  // Built aside and swapped in at the end, so getProjectSessionsDir never
+  // sees a half-filled map while a refresh is running.
+  const nextProjectDirMap = new Map<string, string>();
 
   // Source 1: ~/.claude.json projects map
   try {
@@ -75,8 +110,9 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
     }
   }
 
-  // Source 3: ~/.claude/projects/ dirs (read cwd from first JSONL)
-  projectDirMap.clear();
+  // Source 3: ~/.claude/projects/ dirs (read cwd from the head of the first
+  // JSONL). Only the head: these files reach 1.5GB, and reading them whole
+  // here took ~1.8GB of reads per sweep and pushed the heap toward OOM.
   try {
     const projectsDir = join(CLAUDE_DIR, "projects");
     const entries = await readdir(projectsDir);
@@ -87,8 +123,8 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
         const dirFiles = await readdir(dirPath);
         const firstJsonl = dirFiles.find((f) => f.endsWith(".jsonl"));
         if (!firstJsonl) continue;
-        const raw = await readFile(join(dirPath, firstJsonl), "utf-8");
-        const lines = raw.slice(0, 2000).split("\n");
+        const head = await readFileHead(join(dirPath, firstJsonl), PROJECT_DIR_HEAD_BYTES);
+        const lines = head.slice(0, PROJECT_DIR_HEAD_CHARS).split("\n");
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
@@ -96,7 +132,7 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
             if (parsed.cwd && typeof parsed.cwd === "string" && isAbsolute(parsed.cwd)) {
               const resolvedCwd = resolve(parsed.cwd);
               projects.add(resolvedCwd);
-              projectDirMap.set(resolvedCwd, dirPath);
+              nextProjectDirMap.set(resolvedCwd, dirPath);
               break;
             }
           } catch { continue; }
@@ -111,6 +147,8 @@ export const loadKnownProjects = async (): Promise<Set<string>> => {
     }
   }
 
+  projectDirMap.clear();
+  for (const [cwd, dir] of nextProjectDirMap) projectDirMap.set(cwd, dir);
   knownProjectsCache = projects;
   knownProjectsCacheTime = now;
   return projects;

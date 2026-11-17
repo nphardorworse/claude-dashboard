@@ -302,6 +302,50 @@ const parseJsonlForMeta = async (
   };
 };
 
+// ─── Shared, rate-limited file scans ───────────────────────
+
+// The startup prewarm, /api/projects (every project at once) and per-project
+// requests all scan the same transcripts. Two guards keep that to one pass:
+// callers asking for the same file while it is being parsed share that parse,
+// and at most MAX_CONCURRENT_FILE_SCANS files are parsed at a time across the
+// whole server, however many requests arrive. Without the cap, /api/projects
+// opened hundreds of transcripts at once and pushed the heap past 3GB.
+const MAX_CONCURRENT_FILE_SCANS = 8;
+let activeFileScans = 0;
+const fileScanQueue: Array<() => void> = [];
+const inFlightFileScans = new Map<string, Promise<unknown>>();
+
+const acquireFileScanSlot = (): Promise<void> => {
+  if (activeFileScans < MAX_CONCURRENT_FILE_SCANS) {
+    activeFileScans++;
+    return Promise.resolve();
+  }
+  return new Promise((resolveSlot) => fileScanQueue.push(resolveSlot));
+};
+
+const releaseFileScanSlot = (): void => {
+  const next = fileScanQueue.shift();
+  // Hand the slot straight to the next waiter, so the count stays the same.
+  if (next) next();
+  else activeFileScans--;
+};
+
+const sharedFileScan = <T>(key: string, run: () => Promise<T>): Promise<T> => {
+  const running = inFlightFileScans.get(key);
+  if (running) return running as Promise<T>;
+
+  const scan = (async () => {
+    await acquireFileScanSlot();
+    try {
+      return await run();
+    } finally {
+      releaseFileScanSlot();
+    }
+  })().finally(() => inFlightFileScans.delete(key));
+  inFlightFileScans.set(key, scan);
+  return scan;
+};
+
 const scanProjectJsonlSessions = async (
   projectPath: string,
   excludeIds: Set<string>
@@ -348,16 +392,17 @@ const scanProjectJsonlSessions = async (
           return cached.result;
         }
 
-        const meta = await parseJsonlForMeta(filePath, projectPath);
-        if (!meta) return null;
-
-        jsonlCache.set(sessionId, {
-          result: meta,
-          mtimeMs: fileStat.mtimeMs,
-          size: fileStat.size,
+        return sharedFileScan(`meta\0${projectPath}\0${filePath}`, async () => {
+          const meta = await parseJsonlForMeta(filePath, projectPath);
+          if (meta) {
+            jsonlCache.set(sessionId, {
+              result: meta,
+              mtimeMs: fileStat.mtimeMs,
+              size: fileStat.size,
+            });
+          }
+          return meta;
         });
-
-        return meta;
       })
     );
 
@@ -427,15 +472,18 @@ const enrichMetaSessionCosts = async (
           return;
         }
 
-        const cost = await computeCostFromJsonl(filePath);
-        if (cost !== null) {
-          session.costUSD = cost;
-          costCache.set(session.sessionId, {
-            costUSD: cost,
-            mtimeMs: fileStat.mtimeMs,
-            size: fileStat.size,
-          });
-        }
+        const cost = await sharedFileScan(`cost\0${filePath}`, async () => {
+          const computed = await computeCostFromJsonl(filePath);
+          if (computed !== null) {
+            costCache.set(session.sessionId, {
+              costUSD: computed,
+              mtimeMs: fileStat.mtimeMs,
+              size: fileStat.size,
+            });
+          }
+          return computed;
+        });
+        if (cost !== null) session.costUSD = cost;
       })
     );
   }
