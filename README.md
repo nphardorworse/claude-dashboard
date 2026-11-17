@@ -1,15 +1,17 @@
 # Claude Code Dashboard
 
-A local web dashboard for managing Claude Code's settings, plugins, skills, MCP servers, hooks, profiles, and usage — per-project or globally.
+A local web dashboard for managing Claude Code's settings, plugins, skills, MCP servers, hooks, profiles, and usage, per project or globally.
+
+![Claude Code Dashboard: plugin and skill toggles, profiles, cost analytics and context charts](claude_dashboard.jpeg)
 
 Built to solve token bloat: visualize what loads into every Claude Code session, toggle what you don't need, and track usage across projects.
 
-> **Disclaimers** — please read the [Disclaimers](#disclaimers) section before relying on any numbers shown by this tool.
+> **Disclaimers:** please read the [Disclaimers](#disclaimers) section before relying on any numbers shown by this tool.
 
 ## Quick Start
 
 ```bash
-git clone <repo-url> claude-dashboard
+git clone https://github.com/nphardorworse/claude-dashboard.git
 cd claude-dashboard
 npm install
 npm run dev
@@ -26,7 +28,7 @@ Claude Code loads plugins, MCP servers, hooks, and skills into every conversatio
 This dashboard lets you:
 
 - See exactly what's loading and how many tokens each plugin/skill costs
-- Toggle plugins, skills, MCPs, and hooks on/off — globally or per project
+- Toggle plugins, skills, MCPs, and hooks on/off, globally or per project
 - Switch between configuration profiles for different workflows
 - Track approximate session and weekly usage across projects
 - Set MCP defaults so new projects don't inherit everything
@@ -94,16 +96,16 @@ This dashboard lets you:
 
 ### Transcripts (`#/transcripts`)
 
-- **Session viewer:** Browse any session's full conversation — every user prompt, assistant reply, tool call, and tool result
+- **Session viewer:** Browse any session's full conversation: every user prompt, assistant reply, tool call, and tool result
 - **Filter modes:** All (raw), Conversation (user-facing only), User only, Assistant only
 - **Order toggle:** Oldest first / Newest first
 - **Session header:** Shows session name, full session ID, and `claude --resume` command
 - **Snapshots:** Save immutable copies of session transcripts that survive compaction, rotation, or deletion
   - **Save Full:** Archives the complete raw JSONL
-  - **Save Conversation Only:** Archives only user prompts and assistant text responses (no tool calls/results) — archive-only, cannot be spawned as a new session
-  - Snapshots are never overwritten — each save creates a new independent copy
+  - **Save Conversation Only:** Archives only user prompts and assistant text responses (no tool calls/results). Archive-only: cannot be spawned as a new session
+  - Snapshots are never overwritten. Each save creates a new independent copy
 - **Export / Import:** Download snapshots as portable `.json` files, share with colleagues, import on another machine
-- **Spawn Session (full snapshots only):** Creates a new Claude Code session (new UUID) seeded with a snapshot's conversation context — run `claude --resume <newId>` to continue from where the snapshot left off
+- **Spawn Session (full snapshots only):** Creates a new Claude Code session (new UUID) seeded with a snapshot's conversation context. Run `claude --resume <newId>` to continue from where the snapshot left off
 
 ### How It Works (`#/how-it-works`)
 
@@ -128,7 +130,7 @@ claude-dashboard/
 │   │   │   ├── hooks.ts           # Hook events CRUD
 │   │   │   ├── health.ts          # Aggregated health + token estimation
 │   │   │   ├── projects.ts        # Project discovery + per-project settings
-│   │   │   ├── sessions.ts        # Session history from session-meta
+│   │   │   ├── sessions.ts        # Session history from transcripts
 │   │   │   ├── defaults.ts        # Default MCP state for new projects
 │   │   │   ├── analytics.ts       # Per-session and per-project analytics
 │   │   │   ├── usage.ts           # Rolling-window usage tracking
@@ -149,7 +151,7 @@ claude-dashboard/
 │   │       ├── insights.ts        # Generate health insights from session data
 │   │       ├── jsonl-parser.ts    # Parse session JSONL for detailed analytics
 │   │       ├── transcript-parser.ts # Parse JSONL into readable transcripts
-│   │       ├── session-scanner.ts # Read session-meta files with caching
+│   │       ├── session-scanner.ts # Scan transcripts and session-meta with caching
 │   │       └── types.ts           # Server-side type definitions
 │   ├── client/                    # React 19 + Tailwind v4 (port 5175)
 │   │   ├── App.tsx                # Layout + hash routing + project scope
@@ -192,7 +194,8 @@ The dashboard reads and writes these Claude Code configuration files:
 | `~/.claude/plugins/installed_plugins.json` | Global | R | Plugin metadata, install paths, versions |
 | `~/.claude/plugins/cache/*/` | Global | R | Plugin content for token cost estimation |
 | `~/.claude/profiles/*.json` | Global | R/W | Configuration profiles (plugins, skills, hooks, MCP) |
-| `~/.claude/usage-data/session-meta/*.json` | Global | R | Per-session cost/token/tool data |
+| `~/.claude/projects/*/*.jsonl` | Global | R | Session transcripts (incl. subagents): tokens, cost, analytics |
+| `~/.claude/usage-data/session-meta/*.json` | Global | R | Session summaries, when present (tool counts, durations) |
 | `~/.claude/dashboard-config.json` | Dashboard | R/W | MCP defaults, plan limits |
 | `~/.claude/dashboard-snapshots/*.json` | Dashboard | R/W | Immutable transcript snapshots |
 | `<project>/.claude/settings.json` | Project | R/W | Project-level plugin/skill/hook overrides |
@@ -222,12 +225,12 @@ When a project is selected, plugins resolve through a 3-layer system:
 
 MCP servers are discovered from 6 origins and merged into a unified catalog:
 
-1. **global** — `~/.claude.json` > `mcpServers`
-2. **global-disabled** — `~/.claude.json` > `disabledMcpServers`
-3. **plugin** — `.mcp.json` files bundled inside plugin directories
-4. **project** — `<project>/.mcp.json` > `mcpServers`
-5. **personal** — `~/.claude.json` > `projects[path].mcpServers`
-6. **cloud** — Anthropic-hosted MCP servers (runtime only, read-only)
+1. **global:** `~/.claude.json` > `mcpServers`
+2. **global-disabled:** `~/.claude.json` > `disabledMcpServers`
+3. **plugin:** `.mcp.json` files bundled inside plugin directories
+4. **project:** `<project>/.mcp.json` > `mcpServers`
+5. **personal:** `~/.claude.json` > `projects[path].mcpServers`
+6. **cloud:** Anthropic-hosted MCP servers (runtime only, read-only)
 
 ## Token Cost Estimation
 
@@ -251,7 +254,7 @@ Context window defaults to 200k tokens, auto-detected from your most-used model 
 
 ## Security
 
-- **Localhost only:** The API server binds to `127.0.0.1` — not accessible from the network
+- **Localhost only:** The API server binds to `127.0.0.1`, so it is not accessible from the network
 - **Auth on writes:** All mutating endpoints (POST, PUT, DELETE) require `Authorization: Bearer <token>`. The token is generated on first startup and stored at `~/.claude/dashboard-token`
 - **CORS restricted:** Only `http://localhost:5175` is allowed as an origin
 - **Input validation:** All write endpoints validate input (permissions, hooks, settings IDs, MCP server configs) before writing
@@ -268,24 +271,25 @@ This dashboard is an independent, community-built tool. It is **not affiliated w
 ### Token and Cost Numbers Are Approximations
 
 - **Token estimates** use a ~3.5 characters per token heuristic. Actual tokenization varies by model and content. These numbers are useful for relative comparison (which plugin costs more), not as exact billing data.
-- **Cost estimates** use hardcoded model pricing that may become outdated as Anthropic changes pricing. The dashboard uses Sonnet pricing as a baseline for usage cost estimates.
-- **Usage tracking** is derived from local session log files (`session-meta` JSONL). These logs may not capture all interactions (continued conversations, retries, etc.). Numbers should be treated as lower-bound estimates, not billing statements.
+- **Cost estimates** price every API call in your local transcripts at the standard Anthropic API rate for its model (input, output, 5-minute and 1-hour cache writes, cache reads, and Haiku 5.5's long-prompt tier). Each call is counted once and subagent calls are included. The price table is hardcoded and can fall behind Anthropic's pricing; a model it doesn't list gets the nearest listed version of its family.
+- **Subscription plans are billed differently.** On Pro or Max the dollar figure is what the same usage would cost on the API, not what you pay.
+- **Usage tracking** reads the transcripts Claude Code keeps in `~/.claude/projects`. Sessions you deleted, or that Claude Code cleaned up, are not counted, so treat the numbers as a lower bound, not a billing statement.
 
 ### Plan Limits Are Not Known
 
-Anthropic does not publish exact message limits for Claude Max, Pro, or other subscription plans. The "session limit" and "weekly limit" features in the Usage tab are **self-set tracking thresholds** — they are not connected to Anthropic's actual rate limiting and cannot predict when you'll be throttled.
+Anthropic does not publish exact message limits for Claude Max, Pro, or other subscription plans. The "session limit" and "weekly limit" features in the Usage tab are **self-set tracking thresholds**. They are not connected to Anthropic's actual rate limiting and cannot predict when you'll be throttled.
 
 ### Config File Compatibility
 
 This dashboard reads and writes Claude Code's configuration files (settings.json, .claude.json, .mcp.json, etc.). These file formats are not part of a stable public API:
 
 - **Future Claude Code updates** may change the structure of these files, add new fields, or change how settings are resolved. The dashboard may need to be updated to remain compatible.
-- **The dashboard preserves unrecognized fields** when writing — it does not strip fields it doesn't understand. However, there is always a theoretical risk that writing to these files could cause unexpected behavior if the file format changes.
+- **The dashboard preserves unrecognized fields** when writing: it does not strip fields it doesn't understand. However, there is always a theoretical risk that writing to these files could cause unexpected behavior if the file format changes.
 - **Backups are created before every write.** If something goes wrong, your previous config is preserved at `~/.claude/backups/`.
 
 ### Profiles Are a Dashboard Feature
 
-Profiles (saved configuration presets) are **not a built-in Claude Code feature**. They are managed entirely by this dashboard and stored in `~/.claude/profiles/`. Claude Code itself does not know about profiles — the dashboard applies them by writing the profile's settings into the appropriate config files.
+Profiles (saved configuration presets) are **not a built-in Claude Code feature**. They are managed entirely by this dashboard and stored in `~/.claude/profiles/`. Claude Code itself does not know about profiles. The dashboard applies them by writing the profile's settings into the appropriate config files.
 
 ### Local-Only, No Telemetry
 
