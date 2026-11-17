@@ -370,3 +370,7 @@ All endpoints are at `http://localhost:3847/api/`. Most accept an optional `?pro
 | POST | `/transcripts/snapshots/:id/spawn` | Create new session from snapshot |
 
 </details>
+
+## License
+
+[MIT](LICENSE)
