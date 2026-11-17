@@ -1,6 +1,7 @@
 import { readdir, stat } from "fs/promises";
 import { join, basename, resolve } from "path";
-import { PATHS, getProjectSessionsDirs, loadKnownProjects } from "./paths";
+import { PATHS, getProjectSessionsDirs, listSubagentFiles, loadKnownProjects } from "./paths";
+import { createApiCallFilter } from "./api-call";
 import { readJsonFile } from "./file-io";
 import { calculateTurnCost } from "./pricing";
 import { forEachJsonlEntry } from "./jsonl-stream";
@@ -127,8 +128,10 @@ type JsonlEntry = {
   type?: string;
   timestamp?: string;
   sessionId?: string;
+  requestId?: string;
   cwd?: string;
   message?: {
+    id?: string;
     role?: string;
     model?: string;
     content?: string | { type: string; text?: string }[];
@@ -180,6 +183,7 @@ const parseJsonlForMeta = async (
   let usesMcp = false;
   let usesWebSearch = false;
   let usesTaskAgent = false;
+  const isNewApiCall = createApiCallFilter();
 
   const ok = await forEachJsonlEntry<JsonlEntry>(filePath, (entry) => {
     // Capture sessionId, startTime, and session name
@@ -216,12 +220,14 @@ const parseJsonlForMeta = async (
     }
 
     if (entryType === "assistant") {
-      assistantMessages++;
+      // Repeated lines of one API call carry the same usage: count it once.
+      const newCall = isNewApiCall(entry);
+      if (newCall) assistantMessages++;
       if (entry.message?.model) {
         lastModelUsed = entry.message.model;
       }
       const usage = entry.message?.usage;
-      if (usage) {
+      if (usage && newCall) {
         const turnInput = usage.input_tokens ?? 0;
         const turnOutput = usage.output_tokens ?? 0;
         const turnCacheCreate = usage.cache_creation_input_tokens ?? 0;
@@ -382,25 +388,23 @@ const scanProjectJsonlSessions = async (
         }
 
         const cached = jsonlCache.get(filePath);
-        if (
-          cached &&
-          cached.mtimeMs === fileStat.mtimeMs &&
-          cached.size === fileStat.size
-        ) {
-          return cached.result;
-        }
-
-        return sharedFileScan(`meta\0${projectPath}\0${filePath}`, async () => {
-          const meta = await parseJsonlForMeta(filePath, projectPath);
-          if (meta) {
-            jsonlCache.set(filePath, {
-              result: meta,
-              mtimeMs: fileStat.mtimeMs,
-              size: fileStat.size,
-            });
-          }
-          return meta;
-        });
+        const meta =
+          cached && cached.mtimeMs === fileStat.mtimeMs && cached.size === fileStat.size
+            ? cached.result
+            : await sharedFileScan(`meta\0${projectPath}\0${filePath}`, async () => {
+                const parsed = await parseJsonlForMeta(filePath, projectPath);
+                if (parsed) {
+                  jsonlCache.set(filePath, {
+                    result: parsed,
+                    mtimeMs: fileStat.mtimeMs,
+                    size: fileStat.size,
+                  });
+                }
+                return parsed;
+              });
+        // Outside the scan above, so subagent scans never wait on a slot
+        // their own parent is holding.
+        return meta ? withSubagentUsage(meta, filePath) : null;
       })
     );
 
@@ -412,32 +416,94 @@ const scanProjectJsonlSessions = async (
   return results;
 };
 
-// ─── JSONL cost enrichment for meta-file sessions ─────────
+// ─── Per-file usage sums (subagents, meta-file cost enrichment) ─────
 
-type CostCacheEntry = { costUSD: number; mtimeMs: number; size: number };
-const costCache = new Map<string, CostCacheEntry>();
+type UsageSum = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  costUSD: number;
+};
 
-const computeCostFromJsonl = async (filePath: string): Promise<number | null> => {
-  let costUSD = 0;
+type UsageCacheEntry = { usage: UsageSum; mtimeMs: number; size: number };
+// Keyed by file path. Each entry is a few numbers, so caching all ~10k
+// transcripts (subagents included) costs well under a few MB.
+const usageCache = new Map<string, UsageCacheEntry>();
+
+const parseFileUsage = async (filePath: string): Promise<UsageSum | null> => {
+  const sum: UsageSum = { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, costUSD: 0 };
   let currentModel = "";
+  const isNewApiCall = createApiCallFilter();
 
   const ok = await forEachJsonlEntry<JsonlEntry>(filePath, (entry) => {
-    if (entry.type === "assistant") {
-      if (entry.message?.model) currentModel = entry.message.model;
-      const usage = entry.message?.usage;
-      if (usage) {
-        costUSD += calculateTurnCost(
-          currentModel || "sonnet",
-          usage.input_tokens ?? 0,
-          usage.output_tokens ?? 0,
-          usage.cache_creation_input_tokens ?? 0,
-          usage.cache_read_input_tokens ?? 0
-        );
-      }
-    }
+    if (entry.type !== "assistant") return;
+    if (entry.message?.model) currentModel = entry.message.model;
+    const usage = entry.message?.usage;
+    if (!usage || !isNewApiCall(entry)) return;
+    const input = usage.input_tokens ?? 0;
+    const output = usage.output_tokens ?? 0;
+    const cacheCreate = usage.cache_creation_input_tokens ?? 0;
+    const cacheRead = usage.cache_read_input_tokens ?? 0;
+    sum.inputTokens += input;
+    sum.outputTokens += output;
+    sum.cacheCreationTokens += cacheCreate;
+    sum.cacheReadTokens += cacheRead;
+    sum.costUSD += calculateTurnCost(currentModel || "sonnet", input, output, cacheCreate, cacheRead);
   });
 
-  return ok ? costUSD : null;
+  return ok ? sum : null;
+};
+
+/** Deduped usage and cost of one transcript, cached by mtime + size. */
+const getFileUsage = async (filePath: string): Promise<UsageSum | null> => {
+  let fileStat;
+  try {
+    fileStat = await stat(filePath);
+  } catch {
+    return null;
+  }
+  const cached = usageCache.get(filePath);
+  if (cached && cached.mtimeMs === fileStat.mtimeMs && cached.size === fileStat.size) {
+    return cached.usage;
+  }
+  return sharedFileScan(`usage\0${filePath}`, async () => {
+    const usage = await parseFileUsage(filePath);
+    if (usage) usageCache.set(filePath, { usage, mtimeMs: fileStat.mtimeMs, size: fileStat.size });
+    return usage;
+  });
+};
+
+/** Summed usage of every subagent the session at `sessionFilePath` ran. */
+const getSubagentUsage = async (sessionFilePath: string): Promise<UsageSum> => {
+  const total: UsageSum = { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, costUSD: 0 };
+  const files = await listSubagentFiles(sessionFilePath);
+  const sums = await Promise.all(files.map(getFileUsage));
+  for (const sum of sums) {
+    if (!sum) continue;
+    total.inputTokens += sum.inputTokens;
+    total.outputTokens += sum.outputTokens;
+    total.cacheCreationTokens += sum.cacheCreationTokens;
+    total.cacheReadTokens += sum.cacheReadTokens;
+    total.costUSD += sum.costUSD;
+  }
+  return total;
+};
+
+/**
+ * A copy of `session` with its subagents' usage added. Subagent API calls are
+ * billed but appear only in their own transcripts, never in the parent's.
+ */
+const withSubagentUsage = async (session: SessionMeta, sessionFilePath: string): Promise<SessionMeta> => {
+  const sub = await getSubagentUsage(sessionFilePath);
+  return {
+    ...session,
+    inputTokens: session.inputTokens + sub.inputTokens,
+    outputTokens: session.outputTokens + sub.outputTokens,
+    cacheCreationTokens: session.cacheCreationTokens + sub.cacheCreationTokens,
+    cacheReadTokens: session.cacheReadTokens + sub.cacheReadTokens,
+    costUSD: session.costUSD + sub.costUSD,
+  };
 };
 
 const enrichMetaSessionCosts = async (
@@ -461,31 +527,9 @@ const enrichMetaSessionCosts = async (
     const batch = toEnrich.slice(i, i + BATCH_SIZE);
     await Promise.all(
       batch.map(async ({ session, filePath }) => {
-        let fileStat;
-        try {
-          fileStat = await stat(filePath);
-        } catch {
-          return; // No JSONL file — keep meta estimate
-        }
-
-        const cached = costCache.get(session.sessionId);
-        if (cached && cached.mtimeMs === fileStat.mtimeMs && cached.size === fileStat.size) {
-          session.costUSD = cached.costUSD;
-          return;
-        }
-
-        const cost = await sharedFileScan(`cost\0${filePath}`, async () => {
-          const computed = await computeCostFromJsonl(filePath);
-          if (computed !== null) {
-            costCache.set(session.sessionId, {
-              costUSD: computed,
-              mtimeMs: fileStat.mtimeMs,
-              size: fileStat.size,
-            });
-          }
-          return computed;
-        });
-        if (cost !== null) session.costUSD = cost;
+        const [own, sub] = await Promise.all([getFileUsage(filePath), getSubagentUsage(filePath)]);
+        // No readable JSONL: keep the meta estimate.
+        if (own) session.costUSD = own.costUSD + sub.costUSD;
       })
     );
   }

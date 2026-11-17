@@ -1,5 +1,6 @@
 import { stat } from "fs/promises";
-import { resolveSessionFilePath } from "./paths";
+import { listSubagentFiles, resolveSessionFilePath } from "./paths";
+import { createApiCallFilter } from "./api-call";
 import { forEachJsonlEntry } from "./jsonl-stream";
 import { calculateTurnCost, calculateCostBreakdown } from "./pricing";
 import type { TurnUsage, SessionAnalysis } from "../../shared/types";
@@ -46,7 +47,8 @@ type CompactEntry = {
 type ParsedFileCache = { entries: CompactEntry[]; mtimeMs: number; size: number };
 
 // Keyed by absolute file path; invalidated by mtime+size. Only holds files
-// that actually span a window boundary (a handful), so memory stays small.
+// of sessions that span a window boundary (a handful, plus their subagents),
+// and entries are a few numbers each, so memory stays small.
 const fileEntryCache = new Map<string, ParsedFileCache>();
 
 // Parses currently running, keyed by path. /usage/windowed aggregates the 5h
@@ -57,11 +59,13 @@ const inFlightParses = new Map<string, Promise<CompactEntry[] | null>>();
 type CompactSourceEntry = {
   type?: string;
   timestamp?: string;
-  message?: { model?: string; content?: unknown; usage?: UsageBlock };
+  requestId?: string;
+  message?: { id?: string; model?: string; content?: unknown; usage?: UsageBlock };
 };
 
 const parseCompactEntries = async (filePath: string): Promise<CompactEntry[] | null> => {
   const entries: CompactEntry[] = [];
+  const isNewApiCall = createApiCallFilter();
   const ok = await forEachJsonlEntry<CompactSourceEntry>(filePath, (entry) => {
     // Match the original semantics exactly: missing timestamp → 0 (always
     // before cutoff), malformed → NaN (NaN < cutoff is false → counted).
@@ -77,7 +81,8 @@ const parseCompactEntries = async (filePath: string): Promise<CompactEntry[] | n
 
     if (entry.type === "assistant") {
       const model = entry.message?.model ?? "";
-      const usage = entry.message?.usage;
+      // Repeated lines of one API call carry the same usage: keep only the first.
+      const usage = isNewApiCall(entry) ? entry.message?.usage : undefined;
       if (!model && !usage) return; // contributes nothing to any cutoff
       entries.push({
         ts,
@@ -151,6 +156,13 @@ export const sumUsageAfterCutoff = async (
 
   const entries = await getCompactEntries(filePath);
   if (!entries) return empty;
+  // Subagent calls are billed too but live in their own transcripts. Their
+  // user entries are prompts from the parent, so only their usage counts.
+  // One file at a time: a session can have hundreds of subagents.
+  const subagentEntries: (CompactEntry[] | null)[] = [];
+  for (const subFile of await listSubagentFiles(filePath)) {
+    subagentEntries.push(await getCompactEntries(subFile));
+  }
 
   let messages = 0;
   let inputTokens = 0;
@@ -170,6 +182,16 @@ export const sumUsageAfterCutoff = async (
     // assistant
     if (e.model) lastModel = e.model;
     if (e.hasUsage) {
+      inputTokens += e.input;
+      outputTokens += e.output;
+      cacheCreationTokens += e.cacheCreate;
+      cacheReadTokens += e.cacheRead;
+    }
+  }
+
+  for (const subEntries of subagentEntries) {
+    for (const e of subEntries ?? []) {
+      if (e.ts < cutoffMs || e.kind !== 1 || !e.hasUsage) continue;
       inputTokens += e.input;
       outputTokens += e.output;
       cacheCreationTokens += e.cacheCreate;
@@ -203,7 +225,9 @@ type ContentBlock = {
 type JsonlEntry = {
   type?: string;
   timestamp?: string;
+  requestId?: string;
   message?: {
+    id?: string;
     role?: string;
     model?: string;
     content?: string | ContentBlock[];
@@ -316,6 +340,7 @@ const createTurnBuilder = () => {
   let accOutputCost = 0;
   let accCacheWriteCost = 0;
   let accCacheReadCost = 0;
+  const isNewApiCall = createApiCallFilter();
 
   const flushTurn = () => {
     turns.push({
@@ -402,6 +427,9 @@ const createTurnBuilder = () => {
         lastModel = model;
         lastUsage = msg.usage;
         lastAssistantTimestamp = entry.timestamp ?? "";
+
+        // Repeated lines of one API call carry the same usage: count it once.
+        if (!isNewApiCall(entry)) return;
 
         // Accumulate tokens and cost from EVERY assistant API call
         const turnInput = msg.usage.input_tokens ?? 0;

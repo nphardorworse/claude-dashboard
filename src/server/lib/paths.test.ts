@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
-import { resolveDirProject, toSessionDirName } from "./paths";
+import { listSubagentFiles, resolveDirProject, toSessionDirName } from "./paths";
 
 let root: string;
 
@@ -70,4 +70,17 @@ test("returns null when no file has an absolute cwd", async () => {
     "a.jsonl": [{ type: "summary" }, { type: "user", cwd: "relative/path" }],
   });
   assert.equal(await resolveDirProject(dir, "no-cwd", ["a.jsonl"]), null);
+});
+
+test("lists subagent transcripts at any depth, and none for a session without them", async () => {
+  const dir = await makeDir("with-subagents", { "s1.jsonl": [], "s2.jsonl": [] });
+  const sub = join(dir, "s1", "subagents");
+  await mkdir(join(sub, "workflows", "wf_1"), { recursive: true });
+  await writeFile(join(sub, "agent-a.jsonl"), "", "utf-8");
+  await writeFile(join(sub, "agent-a.meta.json"), "{}", "utf-8");
+  await writeFile(join(sub, "workflows", "wf_1", "agent-b.jsonl"), "", "utf-8");
+
+  const found = (await listSubagentFiles(join(dir, "s1.jsonl"))).sort();
+  assert.deepEqual(found, [join(sub, "agent-a.jsonl"), join(sub, "workflows", "wf_1", "agent-b.jsonl")].sort());
+  assert.deepEqual(await listSubagentFiles(join(dir, "s2.jsonl")), []);
 });

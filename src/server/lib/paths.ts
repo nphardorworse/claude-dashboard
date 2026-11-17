@@ -1,5 +1,5 @@
 import { homedir } from "os";
-import { join, resolve, isAbsolute } from "path";
+import { basename, dirname, join, resolve, isAbsolute } from "path";
 import type { Context } from "hono";
 import { readFile, readdir, stat } from "fs/promises";
 import { readJsonlLines } from "./jsonl-stream";
@@ -261,6 +261,21 @@ export const getProjectSessionsDirs = (projectPath: string): string[] =>
 /** The dir new sessions of a project are written to (see getProjectSessionsDirs). */
 export const getProjectSessionsDir = (projectPath: string): string =>
   getProjectSessionsDirs(projectPath)[0];
+
+/**
+ * Transcripts of the subagents a session ran, at any depth under
+ * `<dir>/<sessionId>/subagents/` (workflow agents sit one level deeper).
+ * Their API calls never appear in the session's own transcript.
+ */
+export const listSubagentFiles = async (sessionFilePath: string): Promise<string[]> => {
+  const subagentsDir = join(dirname(sessionFilePath), basename(sessionFilePath, ".jsonl"), "subagents");
+  try {
+    const entries = await readdir(subagentsDir, { recursive: true });
+    return entries.filter((f) => f.endsWith(".jsonl")).map((f) => join(subagentsDir, f));
+  } catch {
+    return [];
+  }
+};
 
 /**
  * Build/refresh an index of sessionId → absolute JSONL file path by
