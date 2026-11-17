@@ -3,7 +3,7 @@ import { join, basename, resolve } from "path";
 import { PATHS, getProjectSessionsDirs, listSubagentFiles, loadKnownProjects } from "./paths";
 import { createApiCallFilter } from "./api-call";
 import { readJsonFile } from "./file-io";
-import { calculateTurnCost, oneHourCacheWrites } from "./pricing";
+import { calculateSummedCost, calculateTurnCost, oneHourCacheWrites } from "./pricing";
 import { forEachJsonlEntry } from "./jsonl-stream";
 import type { SessionMeta } from "../../shared/types";
 
@@ -50,7 +50,7 @@ const parseSession = (raw: RawSessionMeta): SessionMeta | null => {
   // If meta file has cache breakdown, use it. Otherwise inputTokens likely
   // includes cache — use costUSD from the meta file if available, else estimate.
   const metaCost = r.cost_usd as number | undefined;
-  const costUSD = metaCost ?? calculateTurnCost(
+  const costUSD = metaCost ?? calculateSummedCost(
     lastModelUsed || "sonnet",
     inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens
   );

@@ -24,10 +24,8 @@ type WindowedUsage = {
   inputTokens: number;
   outputTokens: number;
   cacheCreationTokens: number;
-  /** Part of cacheCreationTokens written to the 1-hour cache. */
-  cacheWrite1hTokens: number;
   cacheReadTokens: number;
-  lastModel: string;
+  costUSD: number;
 };
 
 /**
@@ -39,13 +37,12 @@ type WindowedUsage = {
 type CompactEntry = {
   ts: number;
   kind: 0 | 1;
-  model: string;
-  hasUsage: boolean;
   input: number;
   output: number;
   cacheCreate: number;
-  cacheCreate1h: number;
   cacheRead: number;
+  /** Priced per call, since the price depends on the call's own prompt size. */
+  cost: number;
 };
 
 type ParsedFileCache = { entries: CompactEntry[]; mtimeMs: number; size: number };
@@ -70,6 +67,7 @@ type CompactSourceEntry = {
 const parseCompactEntries = async (filePath: string): Promise<CompactEntry[] | null> => {
   const entries: CompactEntry[] = [];
   const isNewApiCall = createApiCallFilter();
+  let lastModel = "";
   const ok = await forEachJsonlEntry<CompactSourceEntry>(filePath, (entry) => {
     // Match the original semantics exactly: missing timestamp → 0 (always
     // before cutoff), malformed → NaN (NaN < cutoff is false → counted).
@@ -78,26 +76,31 @@ const parseCompactEntries = async (filePath: string): Promise<CompactEntry[] | n
     if (entry.type === "user") {
       // Skip tool_result entries, only count real user prompts
       if (!isToolResultContent(entry.message?.content)) {
-        entries.push({ ts, kind: 0, model: "", hasUsage: false, input: 0, output: 0, cacheCreate: 0, cacheCreate1h: 0, cacheRead: 0 });
+        entries.push({ ts, kind: 0, input: 0, output: 0, cacheCreate: 0, cacheRead: 0, cost: 0 });
       }
       return;
     }
 
     if (entry.type === "assistant") {
       const model = entry.message?.model ?? "";
+      if (model) lastModel = model;
       // Repeated lines of one API call carry the same usage: keep only the first.
       const usage = isNewApiCall(entry) ? entry.message?.usage : undefined;
-      if (!model && !usage) return; // contributes nothing to any cutoff
+      if (!usage) return; // contributes nothing to any cutoff
+      const input = usage?.input_tokens ?? 0;
+      const output = usage?.output_tokens ?? 0;
+      const cacheCreate = usage?.cache_creation_input_tokens ?? 0;
+      const cacheRead = usage?.cache_read_input_tokens ?? 0;
       entries.push({
         ts,
         kind: 1,
-        model,
-        hasUsage: !!usage,
-        input: usage?.input_tokens ?? 0,
-        output: usage?.output_tokens ?? 0,
-        cacheCreate: usage?.cache_creation_input_tokens ?? 0,
-        cacheCreate1h: oneHourCacheWrites(usage),
-        cacheRead: usage?.cache_read_input_tokens ?? 0,
+        input,
+        output,
+        cacheCreate,
+        cacheRead,
+        cost: calculateTurnCost(
+          lastModel || "sonnet", input, output, cacheCreate, cacheRead, oneHourCacheWrites(usage),
+        ),
       });
     }
   });
@@ -155,7 +158,7 @@ export const sumUsageAfterCutoff = async (
   projectPath: string,
   cutoffMs: number,
 ): Promise<WindowedUsage> => {
-  const empty: WindowedUsage = { messages: 0, inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheWrite1hTokens: 0, cacheReadTokens: 0, lastModel: "" };
+  const empty: WindowedUsage = { messages: 0, inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, costUSD: 0 };
   const filePath = await resolveSessionFilePath(sessionId, projectPath);
   if (!filePath) return empty;
 
@@ -173,9 +176,8 @@ export const sumUsageAfterCutoff = async (
   let inputTokens = 0;
   let outputTokens = 0;
   let cacheCreationTokens = 0;
-  let cacheWrite1hTokens = 0;
   let cacheReadTokens = 0;
-  let lastModel = "";
+  let costUSD = 0;
 
   for (const e of entries) {
     if (e.ts < cutoffMs) continue;
@@ -186,28 +188,25 @@ export const sumUsageAfterCutoff = async (
     }
 
     // assistant
-    if (e.model) lastModel = e.model;
-    if (e.hasUsage) {
-      inputTokens += e.input;
-      outputTokens += e.output;
-      cacheCreationTokens += e.cacheCreate;
-      cacheWrite1hTokens += e.cacheCreate1h;
-      cacheReadTokens += e.cacheRead;
-    }
+    inputTokens += e.input;
+    outputTokens += e.output;
+    cacheCreationTokens += e.cacheCreate;
+    cacheReadTokens += e.cacheRead;
+    costUSD += e.cost;
   }
 
   for (const subEntries of subagentEntries) {
     for (const e of subEntries ?? []) {
-      if (e.ts < cutoffMs || e.kind !== 1 || !e.hasUsage) continue;
+      if (e.ts < cutoffMs || e.kind !== 1) continue;
       inputTokens += e.input;
       outputTokens += e.output;
       cacheCreationTokens += e.cacheCreate;
-      cacheWrite1hTokens += e.cacheCreate1h;
       cacheReadTokens += e.cacheRead;
+      costUSD += e.cost;
     }
   }
 
-  return { messages, inputTokens, outputTokens, cacheCreationTokens, cacheWrite1hTokens, cacheReadTokens, lastModel };
+  return { messages, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, costUSD };
 };
 
 /** Check if a user entry's content is purely tool_result blocks (not a real prompt). */

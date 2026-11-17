@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { basename } from "path";
 import { getAllSessions } from "../lib/session-scanner";
 import { sumUsageAfterCutoff } from "../lib/jsonl-parser";
-import { calculateTurnCost } from "../lib/pricing";
 import { readJsonFile } from "../lib/file-io";
 import { PATHS } from "../lib/paths";
 import type { SessionMeta, PlanLimits, UsageWindow, WindowedProjectUsage } from "../../shared/types";
@@ -135,12 +134,7 @@ const aggregateWindow = async (
           existing.messages += usage.messages;
           existing.inputTokens += usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens;
           existing.outputTokens += usage.outputTokens;
-          existing.costUSD += calculateTurnCost(
-            usage.lastModel || "sonnet",
-            usage.inputTokens, usage.outputTokens,
-            usage.cacheCreationTokens, usage.cacheReadTokens,
-            usage.cacheWrite1hTokens,
-          );
+          existing.costUSD += usage.costUSD;
         })
       );
     }

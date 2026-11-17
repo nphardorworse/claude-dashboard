@@ -42,19 +42,25 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
   "sonnet-4.6": SONNET_4,
   "sonnet-4.5": SONNET_4,
   "sonnet-4.0": SONNET_4,
-  // Haiku 5.5 rate for prompts up to 100K tokens; longer prompts cost 5x.
+  // For prompts up to 100K tokens; see LONG_PROMPT_PRICING.
   "haiku-5.5": price(0.1, 0.5, 0.125, 0.2, 0.01),
   "haiku-4.5": price(1, 5, 1.25, 2, 0.1),
 };
 
+// Models whose whole request is billed at higher rates when its prompt (input
+// plus cache writes plus cache reads) is over a token threshold.
+const LONG_PROMPT_PRICING: Record<string, { overTokens: number; pricing: ModelPricing }> = {
+  "haiku-5.5": { overTokens: 100_000, pricing: price(0.5, 2.5, 0.625, 1, 0.05) },
+};
+
 // A version this table does not list yet (a new release) is priced as the
 // newest listed model of its family.
-const FAMILY_FALLBACK: Record<string, ModelPricing> = {
-  fable: FABLE_5_2,
-  mythos: FABLE_5_2,
-  opus: MODEL_PRICING["opus-5.5"],
-  sonnet: MODEL_PRICING["sonnet-5.5"],
-  haiku: MODEL_PRICING["haiku-5.5"],
+const FAMILY_FALLBACK: Record<string, string> = {
+  fable: "fable-5.2",
+  mythos: "mythos-5.2",
+  opus: "opus-5.5",
+  sonnet: "sonnet-5.5",
+  haiku: "haiku-5.5",
 };
 
 const DEFAULT_PRICING: ModelPricing = SONNET_4;
@@ -63,19 +69,32 @@ const DEFAULT_PRICING: ModelPricing = SONNET_4;
 // (an 8-digit date is not a minor version, so that one is Opus 4.0).
 const MODEL_ID = /(fable|mythos|opus|sonnet|haiku)-(\d+)(?:-(\d{1,2}))?(?!\d)/;
 
-export const getPricing = (model: string): ModelPricing => {
+const pricingKey = (model: string): string | undefined => {
   const normalized = model.toLowerCase();
   const id = MODEL_ID.exec(normalized);
   if (id) {
     const [, family, major, minor = "0"] = id;
-    const exact = MODEL_PRICING[`${family}-${major}.${minor}`];
-    if (exact) return exact;
+    const key = `${family}-${major}.${minor}`;
+    if (MODEL_PRICING[key]) return key;
   }
   // A bare alias ("opus", "sonnet") or an unlisted version of a known family.
-  for (const [name, pricing] of Object.entries(FAMILY_FALLBACK)) {
-    if (normalized.includes(name)) return pricing;
+  for (const [family, key] of Object.entries(FAMILY_FALLBACK)) {
+    if (normalized.includes(family)) return key;
   }
-  return DEFAULT_PRICING;
+  return undefined;
+};
+
+/**
+ * Rates for one API call. `promptTokens` (input + cache writes + cache reads
+ * of that call) picks the long-prompt tier on models that have one; leave it
+ * out for the standard rates.
+ */
+export const getPricing = (model: string, promptTokens = 0): ModelPricing => {
+  const key = pricingKey(model);
+  if (!key) return DEFAULT_PRICING;
+  const longPrompt = LONG_PROMPT_PRICING[key];
+  if (longPrompt && promptTokens > longPrompt.overTokens) return longPrompt.pricing;
+  return MODEL_PRICING[key];
 };
 
 const PER_MILLION = 1_000_000;
@@ -98,8 +117,10 @@ export type CostBreakdownResult = {
 };
 
 /**
- * `cacheCreation` is all cache-write tokens; `cacheWrite1h` is the part of
- * them written to the 1-hour cache, which costs more than the 5-minute cache.
+ * Cost of ONE API call: the token counts pick its long-prompt tier, so never
+ * pass usage summed over several calls. `cacheCreation` is all cache-write
+ * tokens; `cacheWrite1h` is the part of them written to the 1-hour cache,
+ * which costs more than the 5-minute cache.
  */
 export const calculateCostBreakdown = (
   model: string,
@@ -109,7 +130,7 @@ export const calculateCostBreakdown = (
   cacheRead: number,
   cacheWrite1h = 0,
 ): CostBreakdownResult => {
-  const pricing = getPricing(model);
+  const pricing = getPricing(model, inputTokens + cacheCreation + cacheRead);
   const oneHour = Math.min(Math.max(cacheWrite1h, 0), cacheCreation);
   const inputCostUSD = (inputTokens / PER_MILLION) * pricing.input;
   const outputCostUSD = (outputTokens / PER_MILLION) * pricing.output;
@@ -136,3 +157,24 @@ export const calculateTurnCost = (
 ): number =>
   calculateCostBreakdown(model, inputTokens, outputTokens, cacheCreation, cacheRead, cacheWrite1h)
     .totalCostUSD;
+
+/**
+ * Estimate for usage already summed over many calls, where the per-call
+ * long-prompt tier and the 1-hour cache split are unknown: standard rates,
+ * every cache write priced as a 5-minute write.
+ */
+export const calculateSummedCost = (
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheCreation: number,
+  cacheRead: number,
+): number => {
+  const pricing = getPricing(model);
+  return (
+    inputTokens * pricing.input +
+    outputTokens * pricing.output +
+    cacheCreation * pricing.cacheWrite +
+    cacheRead * pricing.cacheRead
+  ) / PER_MILLION;
+};

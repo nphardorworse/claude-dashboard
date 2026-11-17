@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getPricing, calculateTurnCost, oneHourCacheWrites } from "./pricing";
+import { getPricing, calculateTurnCost, calculateSummedCost, oneHourCacheWrites } from "./pricing";
 
 // [input, output, 5m cache write, 1h cache write, cache read] in USD per million tokens, from
 // https://platform.claude.com/docs/en/about-claude/pricing (checked 2026-11-17).
@@ -63,4 +63,24 @@ test("oneHourCacheWrites reads the transcript usage split", () => {
   assert.equal(oneHourCacheWrites(usage), 200);
   assert.equal(oneHourCacheWrites({}), 0);
   assert.equal(oneHourCacheWrites(undefined), 0);
+});
+
+test("Haiku 5.5 bills a call over 100K prompt tokens at the long-prompt rate", () => {
+  // Prompt = input + cache writes + cache reads. Exactly 100K is still the short rate.
+  assert.deepEqual(getPricing("claude-haiku-5-5", 100_000), getPricing("claude-haiku-5-5"));
+  assert.deepEqual(getPricing("claude-haiku-5-5", 100_001), {
+    input: 0.5, output: 2.5, cacheWrite: 0.625, cacheWrite1h: 1, cacheRead: 0.05,
+  });
+  // 1K input + 20K cache write + 80K cache read = 101K prompt, 1K output.
+  const cost = calculateTurnCost("claude-haiku-5-5", 1_000, 1_000, 20_000, 80_000);
+  assert.ok(Math.abs(cost - (1_000 * 0.5 + 1_000 * 2.5 + 20_000 * 0.625 + 80_000 * 0.05) / 1e6) < 1e-12);
+});
+
+test("other models have no long-prompt tier", () => {
+  assert.deepEqual(getPricing("claude-opus-5-5", 900_000), getPricing("claude-opus-5-5"));
+});
+
+test("summed usage is priced at standard rates whatever its size", () => {
+  // 2M cache reads summed over many Haiku 5.5 calls: no long-prompt tier.
+  assert.equal(calculateSummedCost("claude-haiku-5-5", 0, 0, 0, 2e6), 2 * 0.01);
 });
