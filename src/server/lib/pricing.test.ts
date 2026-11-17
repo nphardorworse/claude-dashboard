@@ -25,6 +25,13 @@ const expected: Record<string, [number, number, number, number, number]> = {
   // Context-window suffix.
   "claude-opus-4-6[1m]": [5, 25, 6.25, 10, 0.5],
   "claude-mythos-5-2": [8, 40, 10, 16, 0.2],
+  // Retired Claude 3 models: the version comes before the family name.
+  "claude-3-opus-20240229": [15, 75, 18.75, 30, 1.5],
+  "claude-3-7-sonnet-20250219": [3, 15, 3.75, 6, 0.3],
+  "claude-3-5-sonnet-20241022": [3, 15, 3.75, 6, 0.3],
+  "claude-3-sonnet-20240229": [3, 15, 3.75, 6, 0.3],
+  "claude-3-5-haiku-20241022": [0.8, 4, 1, 1.6, 0.08],
+  "claude-3-haiku-20240307": [0.25, 1.25, 0.3, 0.5, 0.03],
 };
 
 for (const [model, [input, output, cacheWrite, cacheWrite1h, cacheRead]] of Object.entries(expected)) {
@@ -33,9 +40,20 @@ for (const [model, [input, output, cacheWrite, cacheWrite1h, cacheRead]] of Obje
   });
 }
 
-test("an unlisted version of a known family gets that family's newest price", () => {
+test("a version newer than the table gets that family's newest price", () => {
   assert.deepEqual(getPricing("claude-opus-9-9"), getPricing("claude-opus-5-5"));
   assert.deepEqual(getPricing("sonnet"), getPricing("claude-sonnet-5-5"));
+});
+
+test("an unlisted older version gets the nearest listed version below it", () => {
+  // No Opus 4.3 exists; it sits between Opus 4.1 and Opus 4.5.
+  assert.deepEqual(getPricing("claude-opus-4-3"), getPricing("claude-opus-4-1"));
+  // An unlisted Claude 3 point release of Haiku is priced as Haiku 3.5, not Haiku 5.5.
+  assert.deepEqual(getPricing("claude-3-9-haiku"), getPricing("claude-3-5-haiku-20241022"));
+  // A two-digit minor is not a decimal: Opus 4.10 is newer than Opus 4.8.
+  assert.deepEqual(getPricing("claude-opus-4-10"), getPricing("claude-opus-4-8"));
+  // Older than anything listed: the oldest listed version of the family.
+  assert.deepEqual(getPricing("claude-2-opus"), getPricing("claude-3-opus-20240229"));
 });
 
 test("an unknown model gets the default price", () => {

@@ -45,6 +45,13 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
   // For prompts up to 100K tokens; see LONG_PROMPT_PRICING.
   "haiku-5.5": price(0.1, 0.5, 0.125, 0.2, 0.01),
   "haiku-4.5": price(1, 5, 1.25, 2, 0.1),
+  // Retired Claude 3 models, kept so old transcripts are priced right.
+  "opus-3.0": OPUS_4_0,
+  "sonnet-3.7": SONNET_4,
+  "sonnet-3.5": SONNET_4,
+  "sonnet-3.0": SONNET_4,
+  "haiku-3.5": price(0.8, 4, 1, 1.6, 0.08),
+  "haiku-3.0": price(0.25, 1.25, 0.3, 0.5, 0.03),
 };
 
 // Models whose whole request is billed at higher rates when its prompt (input
@@ -53,35 +60,58 @@ const LONG_PROMPT_PRICING: Record<string, { overTokens: number; pricing: ModelPr
   "haiku-5.5": { overTokens: 100_000, pricing: price(0.5, 2.5, 0.625, 1, 0.05) },
 };
 
-// A version this table does not list yet (a new release) is priced as the
-// newest listed model of its family.
-const FAMILY_FALLBACK: Record<string, string> = {
-  fable: "fable-5.2",
-  mythos: "mythos-5.2",
-  opus: "opus-5.5",
-  sonnet: "sonnet-5.5",
-  haiku: "haiku-5.5",
-};
-
 const DEFAULT_PRICING: ModelPricing = SONNET_4;
+
+const FAMILIES = ["fable", "mythos", "opus", "sonnet", "haiku"] as const;
 
 // Matches claude-opus-4-6, claude-opus-4-5-20251101 and claude-opus-4-20250514
 // (an 8-digit date is not a minor version, so that one is Opus 4.0).
 const MODEL_ID = /(fable|mythos|opus|sonnet|haiku)-(\d+)(?:-(\d{1,2}))?(?!\d)/;
+// Claude 3 ids put the version first: claude-3-5-haiku-20241022, claude-3-opus.
+const LEGACY_MODEL_ID = /claude-(\d)(?:-(\d))?-(opus|sonnet|haiku)/;
 
+// A version as one comparable number: 4.10 -> 410, which sorts above 4.9 -> 409
+// (as a decimal, 4.10 would equal 4.1).
+const versionRank = (major: number, minor: number): number => major * 100 + minor;
+
+// Listed table keys per family, newest first, with their rank.
+const LISTED_VERSIONS = new Map<string, { key: string; rank: number }[]>(
+  FAMILIES.map((family) => [
+    family,
+    Object.keys(MODEL_PRICING)
+      .filter((key) => key.startsWith(`${family}-`))
+      .map((key) => {
+        const [major, minor] = key.slice(family.length + 1).split(".").map(Number);
+        return { key, rank: versionRank(major, minor) };
+      })
+      .sort((a, b) => b.rank - a.rank),
+  ]),
+);
+
+/**
+ * The table key for a model id. An unlisted version gets the nearest listed
+ * version of its family at or below it (a new release above every listed
+ * version therefore gets the newest price), or the oldest listed version when
+ * it is older than all of them. A bare alias ("opus") gets the newest.
+ */
 const pricingKey = (model: string): string | undefined => {
   const normalized = model.toLowerCase();
-  const id = MODEL_ID.exec(normalized);
-  if (id) {
-    const [, family, major, minor = "0"] = id;
-    const key = `${family}-${major}.${minor}`;
-    if (MODEL_PRICING[key]) return key;
-  }
-  // A bare alias ("opus", "sonnet") or an unlisted version of a known family.
-  for (const [family, key] of Object.entries(FAMILY_FALLBACK)) {
-    if (normalized.includes(family)) return key;
-  }
-  return undefined;
+  const legacy = LEGACY_MODEL_ID.exec(normalized);
+  const id = legacy
+    ? { family: legacy[3], major: legacy[1], minor: legacy[2] ?? "0" }
+    : (() => {
+        const m = MODEL_ID.exec(normalized);
+        return m ? { family: m[1], major: m[2], minor: m[3] ?? "0" } : undefined;
+      })();
+
+  const family = id?.family ?? FAMILIES.find((f) => normalized.includes(f));
+  if (!family) return undefined;
+  const listed = LISTED_VERSIONS.get(family) ?? [];
+  if (listed.length === 0) return undefined;
+  if (!id) return listed[0].key;
+
+  const rank = versionRank(Number(id.major), Number(id.minor));
+  return (listed.find((v) => v.rank <= rank) ?? listed[listed.length - 1]).key;
 };
 
 /**

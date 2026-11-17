@@ -533,7 +533,15 @@ const enrichMetaSessionCosts = async (
       batch.map(async ({ session, filePath }) => {
         const [own, sub] = await Promise.all([getFileUsage(filePath), getSubagentUsage(filePath)]);
         // No readable JSONL: keep the meta estimate.
-        if (own) session.costUSD = own.costUSD + sub.costUSD;
+        if (!own) return;
+        // Tokens come from the same transcripts as the cost, subagents
+        // included, so the two never disagree. Meta-file token counts lack
+        // subagents and may fold cache tokens into input.
+        session.inputTokens = own.inputTokens + sub.inputTokens;
+        session.outputTokens = own.outputTokens + sub.outputTokens;
+        session.cacheCreationTokens = own.cacheCreationTokens + sub.cacheCreationTokens;
+        session.cacheReadTokens = own.cacheReadTokens + sub.cacheReadTokens;
+        session.costUSD = own.costUSD + sub.costUSD;
       })
     );
   }
