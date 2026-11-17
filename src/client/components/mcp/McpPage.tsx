@@ -502,8 +502,13 @@ export const McpPage = ({ projectPath = null, onClearProject }: McpPageProps) =>
   }, [projectPath]);
 
   useEffect(() => {
-    setIsLoading(true);
-    loadCatalog().finally(() => setIsLoading(false));
+    const load = async () => {
+      setIsLoading(true);
+      // loadCatalog catches its own errors, so this always finishes.
+      await loadCatalog();
+      setIsLoading(false);
+    };
+    void load();
   }, [loadCatalog]);
 
   // ------ action handlers ------
